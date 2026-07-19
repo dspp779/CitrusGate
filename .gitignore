@@ -1,0 +1,21 @@
+# macOS metadata
+.DS_Store
+
+# Swift build products and packaged applications
+.build/
+dist/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+
+# Local credentials and diagnostic output
+beanfun-cookie.txt
+*cookie*.txt
+debug/
+*.log
+
+# Local environment files
+.env
+.env.*
+!.env.example

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -5,20 +6,33 @@ struct ContentView: View {
     @State private var showDebug = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            ScrollView {
-                VStack(spacing: 18) {
-                    mainContent
-                    statusBar
-                    debugSection
+        Group {
+            if model.mode == .standard {
+                if model.screen == .qr {
+                    standardContent
+                } else {
+                    standardContent
+                        .padding(20)
                 }
-                .padding(24)
-                .frame(maxWidth: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    header
+                    Divider()
+                    ScrollView {
+                        VStack(spacing: 18) {
+                            advancedContent
+                            statusBar
+                            debugSection
+                        }
+                        .padding(24)
+                        .frame(maxWidth: .infinity)
+                    }
+                }
             }
         }
-        .frame(minWidth: 640, minHeight: 680)
+        .frame(width: windowSize.width, height: windowSize.height)
+        .background(FixedWindowConfigurator(contentSize: windowSize))
+        .onAppear { model.handleInitialAppearance() }
         .alert(
             "Beanfun OTP",
             isPresented: Binding(
@@ -32,6 +46,12 @@ struct ContentView: View {
         }
     }
 
+    private var windowSize: CGSize {
+        model.mode == .standard
+            ? CGSize(width: 400, height: 520)
+            : CGSize(width: 720, height: 780)
+    }
+
     private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: "key.viewfinder")
@@ -40,7 +60,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Beanfun 楓之谷 OTP")
                     .font(.title2.bold())
-                Text("原生 macOS 工具 · 不需要額外安裝套件")
+                Text("\(model.mode.title) · 原生 macOS 工具")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -56,14 +76,76 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private var mainContent: some View {
+    private var standardContent: some View {
+        switch model.screen {
+        case .welcome:
+            standardWelcomeView
+        case .qr:
+            standardQRView
+        case .accounts, .otp:
+            standardAccountView
+        }
+    }
+
+    private var standardWelcomeView: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "qrcode.viewfinder")
+                .font(.system(size: 70, weight: .light))
+                .foregroundStyle(.orange)
+            if model.isBusy {
+                ProgressView("正在產生登入 QR Code…")
+            } else {
+                Button {
+                    model.startLogin()
+                } label: {
+                    Label("取得 QR Code", systemImage: "qrcode")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var standardQRView: some View {
+        VStack(spacing: 0) {
+            if let image = model.qrImage {
+                Image(nsImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 376, height: 376)
+                    .padding(12)
+                    .background(.white)
+            }
+            VStack(spacing: 10) {
+                Text("請使用 Gama Play App 掃描並確認登入")
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                HStack(spacing: 6) {
+                    Image(systemName: "timer")
+                    Text("剩餘約 \(model.qrSecondsRemaining) 秒")
+                        .monospacedDigit()
+                }
+                .foregroundStyle(model.qrSecondsRemaining <= 10 ? .red : .secondary)
+                Button("重新產生 QR Code") { model.startLogin() }
+                    .disabled(model.isBusy)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 16)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var advancedContent: some View {
         switch model.screen {
         case .welcome:
             welcomeView
         case .qr:
             qrView
         case .accounts:
-            accountView
+            advancedAccountView
         case .otp:
             otpView
         }
@@ -82,15 +164,23 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
-                Button {
-                    model.startLogin()
-                } label: {
-                    Label("產生登入 QR Code", systemImage: "qrcode")
-                        .frame(minWidth: 180)
+                if model.mode == .standard, model.isBusy {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("正在產生登入 QR Code…")
+                    }
+                    .foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        model.startLogin()
+                    } label: {
+                        Label("產生登入 QR Code", systemImage: "qrcode")
+                            .frame(minWidth: 180)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(model.isBusy)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(model.isBusy)
             }
             .frame(maxWidth: .infinity, minHeight: 330)
             .padding()
@@ -127,7 +217,73 @@ struct ContentView: View {
         }
     }
 
-    private var accountView: some View {
+    private var standardAccountView: some View {
+        GroupBox(model.accounts.count == 1 ? "開啟楓之谷" : "選擇楓之谷帳號") {
+            VStack(spacing: 16) {
+                if model.accounts.count > 1 {
+                    Text("請選擇要使用的帳號")
+                        .foregroundStyle(.secondary)
+                    VStack(spacing: 8) {
+                        ForEach(model.accounts) { account in
+                            Button {
+                                model.selectAccount(account)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: model.selectedAccountID == account.id
+                                          ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(model.selectedAccountID == account.id
+                                                         ? .orange : .secondary)
+                                    Text(account.displayName)
+                                        .font(.headline)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                                .padding(12)
+                                .background(
+                                    model.selectedAccountID == account.id
+                                        ? Color.orange.opacity(0.10) : Color.secondary.opacity(0.05)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } else if let account = model.selectedAccount {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 54))
+                        .foregroundStyle(.orange)
+                    Text(account.displayName)
+                        .font(.title2.bold())
+                }
+
+                if model.isBusy {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text(model.statusMessage)
+                    }
+                    .foregroundStyle(.secondary)
+                } else if let account = model.selectedAccount,
+                          model.launchedAccountID == account.id {
+                    Label("以 \(account.displayName) 開啟遊戲，已啟動", systemImage: "checkmark.circle.fill")
+                        .font(.headline)
+                        .foregroundStyle(.green)
+                } else if let account = model.selectedAccount {
+                    Button {
+                        model.launchSelectedAccount()
+                    } label: {
+                        Label("以 \(account.displayName) 開啟遊戲", systemImage: "play.fill")
+                            .frame(minWidth: 190)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 260)
+            .padding()
+        }
+    }
+
+    private var advancedAccountView: some View {
         GroupBox("選擇楓之谷帳號") {
             VStack(alignment: .leading, spacing: 14) {
                 Text("已從 Beanfun 帳號清單取得 \(model.accounts.count) 個帳號")
@@ -135,7 +291,7 @@ struct ContentView: View {
                 VStack(spacing: 8) {
                     ForEach(model.accounts) { account in
                         Button {
-                            model.selectedAccountID = account.id
+                            model.selectAccount(account)
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: model.selectedAccountID == account.id
@@ -340,5 +496,33 @@ struct ContentView: View {
         .padding(12)
         .background(Color.secondary.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct FixedWindowConfigurator: NSViewRepresentable {
+    let contentSize: CGSize
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        configure(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        configure(nsView)
+    }
+
+    private func configure(_ view: NSView) {
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.contentMinSize = contentSize
+            window.contentMaxSize = contentSize
+            window.standardWindowButton(.zoomButton)?.isEnabled = false
+            window.collectionBehavior.remove(.fullScreenPrimary)
+            window.collectionBehavior.insert(.fullScreenNone)
+            if window.contentLayoutRect.size != contentSize {
+                window.setContentSize(contentSize)
+            }
+        }
     }
 }

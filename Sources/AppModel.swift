@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 final class AppModel: ObservableObject {
     private static let executablePathKey = "MapleStoryExecutablePath"
 
+    @Published private(set) var mode: AppMode = .defaultMode
     @Published var screen: AppScreen = .welcome
     @Published var qrImage: NSImage?
     @Published var qrSecondsRemaining = 60
@@ -21,6 +22,7 @@ final class AppModel: ObservableObject {
     @Published var statusMessage = "準備登入"
     @Published var errorMessage: String?
     @Published var logText = ""
+    @Published private(set) var launchedAccountID: String?
     @Published var maplestoryExecutablePath: String {
         didSet {
             defaults.set(maplestoryExecutablePath, forKey: Self.executablePathKey)
@@ -31,6 +33,7 @@ final class AppModel: ObservableObject {
     private var loginTask: Task<Void, Never>?
     private var otpTask: Task<Void, Never>?
     private var otpCountdownTask: Task<Void, Never>?
+    private var didPromptForExecutable = false
     private lazy var client = BeanfunClient { [weak self] message in
         self?.appendLog(message)
     }
@@ -45,6 +48,38 @@ final class AppModel: ObservableObject {
         return accounts.first { $0.id == selectedAccountID }
     }
 
+    func handleInitialAppearance() {
+        guard !didPromptForExecutable else { return }
+        didPromptForExecutable = true
+        guard mode == .standard else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self, self.mode == .standard else { return }
+            if self.normalizedExecutablePath.isEmpty {
+                self.chooseMapleStoryExecutable()
+            }
+        }
+    }
+
+    func setMode(_ newMode: AppMode) {
+        guard mode != newMode else { return }
+        mode = newMode
+        statusMessage = "已切換至\(newMode.title)"
+        if newMode == .standard {
+            setAutoRefresh(false)
+            if screen == .otp { screen = .accounts }
+            if normalizedExecutablePath.isEmpty {
+                Task { [weak self] in
+                    await Task.yield()
+                    guard let self else { return }
+                    self.chooseMapleStoryExecutable()
+                }
+            }
+        } else if otp != nil, screen == .accounts {
+            screen = .otp
+        }
+    }
+
     func startLogin() {
         loginTask?.cancel()
         otpTask?.cancel()
@@ -53,6 +88,7 @@ final class AppModel: ObservableObject {
         accounts = []
         selectedAccountID = nil
         otp = nil
+        launchedAccountID = nil
         qrImage = nil
         logText = ""
         isBusy = true
@@ -88,8 +124,13 @@ final class AppModel: ObservableObject {
                         accounts = loadedAccounts
                         selectedAccountID = loadedAccounts.first?.id
                         screen = .accounts
-                        statusMessage = "登入成功，請選擇楓之谷帳號"
                         isBusy = false
+                        if mode == .standard, loadedAccounts.count == 1 {
+                            statusMessage = "登入成功，正在以 \(loadedAccounts[0].displayName) 開啟遊戲…"
+                            launchSelectedAccount()
+                        } else {
+                            statusMessage = "登入成功，請選擇楓之谷帳號"
+                        }
                         return
                     case .expired:
                         throw BeanfunError.expired("QR code 已過期，請重新產生")
@@ -109,6 +150,21 @@ final class AppModel: ObservableObject {
     }
 
     func retrieveOTP() {
+        retrieveOTP(launchWhenReady: false)
+    }
+
+    func launchSelectedAccount() {
+        launchedAccountID = nil
+        retrieveOTP(launchWhenReady: true)
+    }
+
+    func selectAccount(_ account: GameAccount) {
+        selectedAccountID = account.id
+        launchedAccountID = nil
+        otp = nil
+    }
+
+    private func retrieveOTP(launchWhenReady: Bool) {
         guard let account = selectedAccount else {
             errorMessage = "請先選擇楓之谷帳號"
             return
@@ -124,10 +180,15 @@ final class AppModel: ObservableObject {
                 let result = try await client.fetchOTP(for: account)
                 try Task.checkCancellation()
                 otp = result
-                screen = .otp
                 isBusy = false
-                statusMessage = "OTP 已更新"
-                scheduleAutoRefreshIfNeeded()
+                if launchWhenReady {
+                    statusMessage = "OTP 已取得，正在以 \(account.displayName) 開啟遊戲…"
+                    launchMapleStory()
+                } else {
+                    screen = .otp
+                    statusMessage = "OTP 已更新"
+                    scheduleAutoRefreshIfNeeded()
+                }
             } catch is CancellationError {
                 isBusy = false
             } catch BeanfunError.cancelled {
@@ -188,7 +249,7 @@ final class AppModel: ObservableObject {
     }
 
     func launchMapleStory() {
-        let path = maplestoryExecutablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path = normalizedExecutablePath
         guard !path.isEmpty else {
             errorMessage = "請先選擇 MapleStory.exe"
             return
@@ -209,6 +270,8 @@ final class AppModel: ObservableObject {
             return
         }
 
+        launchedAccountID = nil
+
         let process = Process()
         let standardError = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -226,6 +289,7 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 self.isBusy = false
                 if process.terminationStatus == 0 {
+                    self.launchedAccountID = account.id
                     self.statusMessage = "已透過 Cyder 啟動 MapleStory.exe"
                     self.appendLog("執行 open -n：executable=\(path)，account=\(account.id)")
                 } else {
@@ -253,6 +317,10 @@ final class AppModel: ObservableObject {
         otpSecondsRemaining = 0
         screen = .accounts
         statusMessage = "請選擇楓之谷帳號"
+    }
+
+    private var normalizedExecutablePath: String {
+        maplestoryExecutablePath.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func clearError() {

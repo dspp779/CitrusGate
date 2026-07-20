@@ -6,7 +6,8 @@ enum CoreTests {
         try testKnownDESVector()
         try testHexDecoder()
         try testMapleStoryLaunchArguments()
-        print("CoreTests: 3 tests passed")
+        try testAppModes()
+        print("CoreTests: 4 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -40,6 +41,13 @@ enum CoreTests {
             "T9ACCOUNT",
             "12345678",
         ], "open launch arguments mismatch")
+    }
+
+    private static func testAppModes() throws {
+        try expect(AppMode.allCases == [.standard, .advanced], "app mode order mismatch")
+        try expect(AppMode.defaultMode == .standard, "standard mode should be the default")
+        try expect(AppMode.standard.title == "一般模式", "standard mode title mismatch")
+        try expect(AppMode.advanced.title == "進階模式", "advanced mode title mismatch")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

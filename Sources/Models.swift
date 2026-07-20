@@ -28,6 +28,22 @@ struct OTPResult: Equatable {
     let commandLine: String
 }
 
+enum AppMode: String, CaseIterable, Identifiable {
+    case standard
+    case advanced
+
+    static let defaultMode: AppMode = .standard
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .standard: return "一般模式"
+        case .advanced: return "進階模式"
+        }
+    }
+}
+
 enum MapleStoryLaunch {
     static let host = "tw.login.maplestory.beanfun.com"
     static let port = "8484"

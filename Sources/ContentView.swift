@@ -276,7 +276,7 @@ struct ContentView: View {
                         Button("選擇…") { model.chooseMapleStoryExecutable() }
                     }
                     HStack {
-                        Text("會以獨立參數傳入路徑、伺服器、帳號 ID 與 OTP。")
+                        Text("使用 open -n，並將伺服器、帳號 ID 與 OTP 放在 --args 後傳入。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()

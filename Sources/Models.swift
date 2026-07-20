@@ -37,12 +37,12 @@ enum MapleStoryLaunch {
         [host, port, provider, accountID, otp]
     }
 
-    static func cyderArguments(
+    static func openArguments(
         executablePath: String,
         accountID: String,
         otp: String
     ) -> [String] {
-        ["--launch-exe", executablePath, "--"] + gameArguments(accountID: accountID, otp: otp)
+        ["-n", executablePath, "--args"] + gameArguments(accountID: accountID, otp: otp)
     }
 
     static func commandLine(accountID: String, otp: String) -> String {

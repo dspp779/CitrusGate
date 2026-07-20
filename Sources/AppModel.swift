@@ -209,36 +209,42 @@ final class AppModel: ObservableObject {
             return
         }
 
-        let executableURL = URL(fileURLWithPath: path)
-        let workspace = NSWorkspace.shared
-        guard let applicationURL = workspace.urlForApplication(toOpen: executableURL) else {
-            errorMessage = "找不到 MapleStory.exe 的預設開啟程式；請先將它設為由 Cyder.app 開啟"
-            return
-        }
-
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
-        // Arguments are only guaranteed to reach a newly launched process.
-        configuration.createsNewApplicationInstance = true
-        configuration.arguments = MapleStoryLaunch.cyderArguments(
+        let process = Process()
+        let standardError = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = MapleStoryLaunch.openArguments(
             executablePath: path,
             accountID: account.id,
             otp: otp.value
         )
-
-        isBusy = true
-        statusMessage = "正在透過 \(applicationURL.deletingPathExtension().lastPathComponent) 啟動楓之谷…"
-        workspace.openApplication(at: applicationURL, configuration: configuration) { [weak self] _, error in
+        process.standardError = standardError
+        process.terminationHandler = { [weak self] process in
+            let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
+            let errorText = String(data: errorData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             Task { @MainActor in
                 guard let self else { return }
                 self.isBusy = false
-                if let error {
-                    self.present(error)
+                if process.terminationStatus == 0 {
+                    self.statusMessage = "已透過 Cyder 啟動 MapleStory.exe"
+                    self.appendLog("執行 open -n：executable=\(path)，account=\(account.id)")
                 } else {
-                    self.statusMessage = "已將 MapleStory.exe 與登入參數交給 Cyder"
-                    self.appendLog("啟動 Cyder：executable=\(path)，account=\(account.id)")
+                    let message = errorText.flatMap { $0.isEmpty ? nil : $0 }
+                        ?? "open 結束代碼 \(process.terminationStatus)"
+                    self.present(BeanfunError.rejected(
+                        message
+                    ))
                 }
             }
+        }
+
+        isBusy = true
+        statusMessage = "正在以 open -n 透過 Cyder 啟動楓之谷…"
+        do {
+            try process.run()
+        } catch {
+            isBusy = false
+            present(error)
         }
     }
 

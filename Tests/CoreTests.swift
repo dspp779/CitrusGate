@@ -25,21 +25,21 @@ enum CoreTests {
     }
 
     private static func testMapleStoryLaunchArguments() throws {
-        let arguments = MapleStoryLaunch.cyderArguments(
+        let arguments = MapleStoryLaunch.openArguments(
             executablePath: "/Games/Maple Story/MapleStory.exe",
             accountID: "T9ACCOUNT",
             otp: "12345678"
         )
         try expect(arguments == [
-            "--launch-exe",
+            "-n",
             "/Games/Maple Story/MapleStory.exe",
-            "--",
+            "--args",
             "tw.login.maplestory.beanfun.com",
             "8484",
             "BeanFun",
             "T9ACCOUNT",
             "12345678",
-        ], "Cyder launch arguments mismatch")
+        ], "open launch arguments mismatch")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

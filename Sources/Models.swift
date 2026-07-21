@@ -248,6 +248,48 @@ enum LaunchCommandBuilder {
         }
         return "open -n \(quotedPath) --args \(args.joined(separator: " "))"
     }
+
+    static func nexonWineCommand(
+        executablePath: String,
+        accountID: String,
+        otp: String
+    ) -> String {
+        let workdir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
+        let args = GameDefinition.mapleStory
+            .gameArguments(accountID: accountID, otp: otp)
+            .joined(separator: " ")
+        return """
+        export CX_ROOT=\(shellQuote(mapleStoryWineCXRoot))
+        export PATH="$CX_ROOT/MapleStory Launcher:$PATH"
+        export LANG=zh_TW.UTF-8
+        export LC_ALL=zh_TW.UTF-8
+        export LC_CTYPE=zh_TW.UTF-8
+
+        wine --bottle \(mapleStoryWineBottle) --workdir \(shellQuote(workdir)) \(shellQuote(executablePath)) \(args)
+        """
+    }
+
+    static func fullCommand(
+        style: AdvancedLaunchCommandStyle,
+        game: GameDefinition,
+        executablePath: String,
+        accountID: String,
+        otp: String
+    ) -> String {
+        if style == .nexonWine, game.id == GameDefinition.mapleStory.id {
+            return nexonWineCommand(
+                executablePath: executablePath,
+                accountID: accountID,
+                otp: otp
+            )
+        }
+        return openCommand(
+            executablePath: executablePath,
+            game: game,
+            accountID: accountID,
+            otp: otp
+        )
+    }
 }
 
 struct GameStartData {

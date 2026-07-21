@@ -216,6 +216,86 @@ enum MapleStoryLaunch {
     }
 }
 
+enum AdvancedLaunchCommandStyle: String, CaseIterable, Identifiable {
+    case open
+    case nexonWine
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .open: return "open"
+        case .nexonWine: return "Nexon Launcher Wine"
+        }
+    }
+}
+
+enum LaunchCommandBuilder {
+    static let mapleStoryWineCXRoot =
+        "/Applications/MapleStory Launcher.app/Contents/SharedSupport/maplestoryna"
+    static let mapleStoryWineBottle = "maplestory"
+
+    static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    static func openCommand(
+        executablePath: String,
+        game: GameDefinition,
+        accountID: String,
+        otp: String
+    ) -> String {
+        let quotedPath = shellQuote(executablePath)
+        let args = game.gameArguments(accountID: accountID, otp: otp)
+        if args.isEmpty {
+            return "open -n \(quotedPath)"
+        }
+        return "open -n \(quotedPath) --args \(args.joined(separator: " "))"
+    }
+
+    static func nexonWineCommand(
+        executablePath: String,
+        accountID: String,
+        otp: String
+    ) -> String {
+        let workdir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
+        let args = GameDefinition.mapleStory
+            .gameArguments(accountID: accountID, otp: otp)
+            .joined(separator: " ")
+        return """
+        export CX_ROOT=\(shellQuote(mapleStoryWineCXRoot))
+        export PATH="$CX_ROOT/MapleStory Launcher:$PATH"
+        export LANG=zh_TW.UTF-8
+        export LC_ALL=zh_TW.UTF-8
+        export LC_CTYPE=zh_TW.UTF-8
+
+        wine --bottle \(mapleStoryWineBottle) --workdir \(shellQuote(workdir)) \(shellQuote(executablePath)) \(args)
+        """
+    }
+
+    static func fullCommand(
+        style: AdvancedLaunchCommandStyle,
+        game: GameDefinition,
+        executablePath: String,
+        accountID: String,
+        otp: String
+    ) -> String {
+        if style == .nexonWine, game.id == GameDefinition.mapleStory.id {
+            return nexonWineCommand(
+                executablePath: executablePath,
+                accountID: accountID,
+                otp: otp
+            )
+        }
+        return openCommand(
+            executablePath: executablePath,
+            game: game,
+            accountID: accountID,
+            otp: otp
+        )
+    }
+}
+
 struct GameStartData {
     let longPollingKey: String
     let accountID: String

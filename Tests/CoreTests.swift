@@ -9,7 +9,10 @@ enum CoreTests {
         try testMultiGameCatalog()
         try testGameLaunchArguments()
         try testAppModes()
-        print("CoreTests: 6 tests passed")
+        try testShellQuote()
+        try testOpenFullLaunchCommand()
+        try testNexonWineFullLaunchCommand()
+        print("CoreTests: 9 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -90,6 +93,70 @@ enum CoreTests {
             lineage.openArguments(executablePath: "/Games/Lineage.exe", accountID: "id", otp: "otp")
                 == ["-n", "/Games/Lineage.exe"],
             "manual launch must not pass unverified arguments"
+        )
+    }
+
+    private static func testShellQuote() throws {
+        try expect(LaunchCommandBuilder.shellQuote("/Games/MapleStory.exe") == "'/Games/MapleStory.exe'", "plain path quote mismatch")
+        try expect(
+            LaunchCommandBuilder.shellQuote("/Games/Maple Story/MapleStory.exe") == "'/Games/Maple Story/MapleStory.exe'",
+            "spaced path quote mismatch"
+        )
+        try expect(
+            LaunchCommandBuilder.shellQuote("/Games/O'Brien/MapleStory.exe") == "'/Games/O'\\''Brien/MapleStory.exe'",
+            "single-quote path escaping mismatch"
+        )
+    }
+
+    private static func testOpenFullLaunchCommand() throws {
+        let command = LaunchCommandBuilder.openCommand(
+            executablePath: "/Games/Maple Story/MapleStory.exe",
+            game: .mapleStory,
+            accountID: "T9ACCOUNT",
+            otp: "12345678"
+        )
+        try expect(
+            command == "open -n '/Games/Maple Story/MapleStory.exe' --args tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678",
+            "MapleStory open full command mismatch"
+        )
+
+        let lineage = try require(GameDefinition.all.first { $0.id == "lineage" }, "Lineage missing")
+        let manual = LaunchCommandBuilder.openCommand(
+            executablePath: "/Games/Lineage.exe",
+            game: lineage,
+            accountID: "id",
+            otp: "otp"
+        )
+        try expect(manual == "open -n '/Games/Lineage.exe'", "manual open full command must omit --args")
+    }
+
+    private static func testNexonWineFullLaunchCommand() throws {
+        let command = LaunchCommandBuilder.nexonWineCommand(
+            executablePath: "/Users/jjc/Documents/ogs/gamania Games/MapleStory/MapleStory.exe",
+            accountID: "T9ACCOUNT",
+            otp: "12345678"
+        )
+        let expected = """
+        export CX_ROOT='/Applications/MapleStory Launcher.app/Contents/SharedSupport/maplestoryna'
+        export PATH="$CX_ROOT/MapleStory Launcher:$PATH"
+        export LANG=zh_TW.UTF-8
+        export LC_ALL=zh_TW.UTF-8
+        export LC_CTYPE=zh_TW.UTF-8
+
+        wine --bottle maplestory --workdir '/Users/jjc/Documents/ogs/gamania Games/MapleStory' '/Users/jjc/Documents/ogs/gamania Games/MapleStory/MapleStory.exe' tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678
+        """
+        try expect(command == expected, "Nexon Wine full command mismatch")
+
+        let openFallback = LaunchCommandBuilder.fullCommand(
+            style: .nexonWine,
+            game: try require(GameDefinition.all.first { $0.id == "mabinogi" }, "Mabinogi missing"),
+            executablePath: "/Games/mabinogi.exe",
+            accountID: "A2ACCOUNT",
+            otp: "OTP123"
+        )
+        try expect(
+            openFallback.hasPrefix("open -n "),
+            "non-MapleStory must not emit Wine command even if style is nexonWine"
         )
     }
 

@@ -212,6 +212,44 @@ enum MapleStoryLaunch {
     }
 }
 
+enum AdvancedLaunchCommandStyle: String, CaseIterable, Identifiable {
+    case open
+    case nexonWine
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .open: return "open"
+        case .nexonWine: return "Nexon Launcher Wine"
+        }
+    }
+}
+
+enum LaunchCommandBuilder {
+    static let mapleStoryWineCXRoot =
+        "/Applications/MapleStory Launcher.app/Contents/SharedSupport/maplestoryna"
+    static let mapleStoryWineBottle = "maplestory"
+
+    static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    static func openCommand(
+        executablePath: String,
+        game: GameDefinition,
+        accountID: String,
+        otp: String
+    ) -> String {
+        let quotedPath = shellQuote(executablePath)
+        let args = game.gameArguments(accountID: accountID, otp: otp)
+        if args.isEmpty {
+            return "open -n \(quotedPath)"
+        }
+        return "open -n \(quotedPath) --args \(args.joined(separator: " "))"
+    }
+}
+
 struct GameStartData {
     let longPollingKey: String
     let accountID: String

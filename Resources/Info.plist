@@ -10,6 +10,8 @@
     <string>BeanfunOTP</string>
     <key>CFBundleIdentifier</key>
     <string>local.ogom.beanfunotp</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

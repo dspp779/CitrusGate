@@ -31,6 +31,18 @@ struct BeanfunOTPApp: App {
         .windowResizability(.contentSize)
         .commandsRemoved()
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("關閉並結束 Beanfun OTP") {
+                    NSApp.terminate(nil)
+                }
+                .keyboardShortcut("w", modifiers: .command)
+            }
+            CommandGroup(replacing: .appTermination) {
+                Button("結束 Beanfun OTP") {
+                    NSApp.terminate(nil)
+                }
+                .keyboardShortcut("q", modifiers: .command)
+            }
             CommandMenu("模式") {
                 ForEach(AppMode.allCases) { mode in
                     Button {
@@ -45,9 +57,22 @@ struct BeanfunOTPApp: App {
                 }
             }
             CommandMenu("遊戲") {
-                Button("選擇 MapleStory 主程式…") {
-                    model.chooseMapleStoryExecutable()
+                ForEach(model.games) { game in
+                    Button {
+                        model.selectGame(game)
+                    } label: {
+                        if model.selectedGameID == game.id {
+                            Label(game.name, systemImage: "checkmark")
+                        } else {
+                            Text(game.name)
+                        }
+                    }
                 }
+                Divider()
+                Button("選擇\(model.selectedGame?.name ?? "遊戲")主程式…") {
+                    model.chooseExecutable()
+                }
+                .disabled(model.selectedGame == nil)
             }
         }
     }

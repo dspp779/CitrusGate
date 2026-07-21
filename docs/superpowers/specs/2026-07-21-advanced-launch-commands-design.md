@@ -25,7 +25,7 @@ In advanced mode, show and copy a complete shell command that can be pasted into
 | --- | --- |
 | Scope of display change | Advanced mode display + copy only |
 | Wine availability | 新楓之谷 only |
-| Defaults | Fixed Wine path, bottle `default`, `--workdir` = parent of selected `.exe` |
+| Defaults | Align with `docs/macos-player-guide.md`: Wine via MapleStory Launcher SharedSupport, bottle `maplestory`, locale `zh_TW.UTF-8`, `--workdir` = parent of selected `.exe` |
 | Command generation | Computed live from `executablePath` + account + OTP + selected method |
 | Launch button | Unchanged (`open -n`) |
 
@@ -53,15 +53,24 @@ open -n '/path/to/MapleStory.exe' --args tw.login.maplestory.beanfun.com 8484 Be
 
 ### Wine (MapleStory only)
 
+Match the verified manual launch form in `docs/macos-player-guide.md` (step 5): locale exports, Wine on `PATH` from MapleStory Launcher SharedSupport, bottle `maplestory`.
+
 ```bash
-'/Applications/MapleStory Launcher.app/Contents/SharedSupport/maplestoryna/bin/wine' --wait-children --enable-alt-loader macdrv --bottle default --workdir '/path/to/MapleStoryFolder' '/path/to/MapleStory.exe' tw.login.maplestory.beanfun.com 8484 BeanFun <ServiceAccountID> <OTP>
+export CX_ROOT='/Applications/MapleStory Launcher.app/Contents/SharedSupport/maplestoryna'
+export PATH="$CX_ROOT/MapleStory Launcher:$PATH"
+export LANG=zh_TW.UTF-8
+export LC_ALL=zh_TW.UTF-8
+export LC_CTYPE=zh_TW.UTF-8
+
+wine --bottle maplestory --workdir '/path/to/MapleStoryFolder' '/path/to/MapleStory.exe' tw.login.maplestory.beanfun.com 8484 BeanFun <ServiceAccountID> <OTP>
 ```
 
 Rules:
 
 - Shell-quote every path (spaces and special characters).
 - `--workdir` is the parent directory of the selected executable.
-- Wine binary path and bottle name are fixed defaults.
+- `CX_ROOT`, Wine `PATH` entry, bottle `maplestory`, and locale exports are fixed defaults (not user-editable in this iteration).
+- Do not use bottle `default` or the older `…/bin/wine --wait-children --enable-alt-loader macdrv` form; the player guide is the source of truth.
 - Do not emit a half-built command when `.exe` or OTP is missing; show a prompt instead and disable copy.
 
 ## UI
@@ -105,7 +114,7 @@ Update the advanced-mode group (rename title to 「遊戲啟動指令」):
 Add unit tests for:
 
 1. Full `open` MapleStory command with spaced path, `--args`, account ID, and OTP.
-2. Full Wine MapleStory command with fixed Wine path, `default` bottle, and `--workdir` = exe parent directory.
+2. Full Wine MapleStory command with `CX_ROOT` / `PATH` exports, `zh_TW.UTF-8` locale, bottle `maplestory`, and `--workdir` = exe parent directory.
 3. Manual game full command: `open -n '/path/to/Lineage.exe'` with no `--args`.
 4. Shell quoting for paths containing spaces and single quotes.
 

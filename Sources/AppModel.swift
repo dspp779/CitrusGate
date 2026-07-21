@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 @MainActor
 final class AppModel: ObservableObject {
     private static let executablePathKey = "MapleStoryExecutablePath"
+    private static let advancedLaunchCommandStyleKey = "AdvancedLaunchCommandStyle"
 
     @Published private(set) var mode: AppMode = .defaultMode
     @Published var screen: AppScreen = .welcome
@@ -28,6 +29,11 @@ final class AppModel: ObservableObject {
             defaults.set(maplestoryExecutablePath, forKey: Self.executablePathKey)
         }
     }
+    @Published var advancedLaunchCommandStyle: AdvancedLaunchCommandStyle {
+        didSet {
+            defaults.set(advancedLaunchCommandStyle.rawValue, forKey: Self.advancedLaunchCommandStyleKey)
+        }
+    }
 
     private let defaults: UserDefaults
     private var loginTask: Task<Void, Never>?
@@ -41,11 +47,33 @@ final class AppModel: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         maplestoryExecutablePath = defaults.string(forKey: Self.executablePathKey) ?? ""
+        if let raw = defaults.string(forKey: Self.advancedLaunchCommandStyleKey),
+           let style = AdvancedLaunchCommandStyle(rawValue: raw) {
+            advancedLaunchCommandStyle = style
+        } else {
+            advancedLaunchCommandStyle = .open
+        }
     }
 
     var selectedAccount: GameAccount? {
         guard let selectedAccountID else { return nil }
         return accounts.first { $0.id == selectedAccountID }
+    }
+
+    var canCopyLaunchCommand: Bool { fullLaunchCommand != nil }
+
+    var fullLaunchCommand: String? {
+        let path = normalizedExecutablePath
+        guard !path.isEmpty,
+              let account = selectedAccount,
+              let otp else { return nil }
+        return LaunchCommandBuilder.fullCommand(
+            style: advancedLaunchCommandStyle,
+            game: .mapleStory,
+            executablePath: path,
+            accountID: account.id,
+            otp: otp.value
+        )
     }
 
     func handleInitialAppearance() {
@@ -223,9 +251,13 @@ final class AppModel: ObservableObject {
     }
 
     func copyCommandLine() {
-        guard let value = otp?.commandLine else { return }
+        copyLaunchCommand()
+    }
+
+    func copyLaunchCommand() {
+        guard let value = fullLaunchCommand else { return }
         copy(value)
-        statusMessage = "啟動參數已複製"
+        statusMessage = "啟動指令已複製"
     }
 
     func copyDebugLog() {

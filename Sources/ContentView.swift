@@ -401,16 +401,31 @@ struct ContentView: View {
                 .padding(10)
             }
 
-            GroupBox("遊戲啟動參數") {
+            GroupBox("遊戲啟動指令") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(model.otp?.commandLine ?? "")
-                        .font(.callout.monospaced())
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack {
-                        Button { model.copyCommandLine() } label: {
-                            Label("複製啟動參數", systemImage: "terminal")
+                    Picker("指令形式", selection: $model.advancedLaunchCommandStyle) {
+                        ForEach(AdvancedLaunchCommandStyle.allCases) { style in
+                            Text(style.title).tag(style)
                         }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    if let command = model.fullLaunchCommand {
+                        Text(command)
+                            .font(.callout.monospaced())
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Text("請先選擇主程式並取得 OTP，以產生完整啟動指令。")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack {
+                        Button { model.copyLaunchCommand() } label: {
+                            Label("複製啟動指令", systemImage: "terminal")
+                        }
+                        .disabled(!model.canCopyLaunchCommand)
                         Spacer()
                         Button("選擇其他帳號") { model.chooseAnotherAccount() }
                     }

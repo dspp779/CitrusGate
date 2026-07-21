@@ -28,6 +28,152 @@ struct OTPResult: Equatable {
     let commandLine: String
 }
 
+enum GameLaunchStyle: String, Hashable {
+    case mapleStory
+    case mabinogi
+    case elsword
+    case manual
+}
+
+enum BeanfunAccountFlow: String, Hashable {
+    case gameZone
+    case accountsManagement
+}
+
+struct GameDefinition: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let serviceCode: String
+    let serviceRegion: String
+    let imageName: String
+    let executableName: String
+    let launchStyle: GameLaunchStyle
+    let accountFlow: BeanfunAccountFlow
+
+    var serviceKey: String { "\(serviceCode)_\(serviceRegion)" }
+
+    var supportsAutomaticLogin: Bool { launchStyle != .manual }
+
+    func gameArguments(accountID: String, otp: String) -> [String] {
+        switch launchStyle {
+        case .mapleStory:
+            return ["tw.login.maplestory.beanfun.com", "8484", "BeanFun", accountID, otp]
+        case .mabinogi:
+            return ["/N:\(accountID)", "/V:\(otp)", "/T:gamania"]
+        case .elsword:
+            return [accountID, otp, "TW"]
+        case .manual:
+            return []
+        }
+    }
+
+    func openArguments(executablePath: String, accountID: String, otp: String) -> [String] {
+        let arguments = gameArguments(accountID: accountID, otp: otp)
+        return arguments.isEmpty
+            ? ["-n", executablePath]
+            : ["-n", executablePath, "--args"] + arguments
+    }
+
+    func commandLine(accountID: String, otp: String) -> String {
+        gameArguments(accountID: accountID, otp: otp).joined(separator: " ")
+    }
+
+    static let mapleStory = GameDefinition(
+        id: "maplestory",
+        name: "新楓之谷",
+        serviceCode: "610074",
+        serviceRegion: "T9",
+        imageName: "maplestory.jpg",
+        executableName: "MapleStory.exe",
+        launchStyle: .mapleStory,
+        accountFlow: .gameZone
+    )
+
+    static let all: [GameDefinition] = [
+        mapleStory,
+        GameDefinition(
+            id: "lineage-international",
+            name: "天堂國際服",
+            serviceCode: "611639",
+            serviceRegion: "T0",
+            imageName: "lineage-international.jpg",
+            executableName: "Lineage.exe",
+            launchStyle: .manual,
+            accountFlow: .gameZone
+        ),
+        GameDefinition(
+            id: "lineage",
+            name: "天堂",
+            serviceCode: "600035",
+            serviceRegion: "T7",
+            imageName: "lineage.jpg",
+            executableName: "Lineage.exe",
+            launchStyle: .manual,
+            accountFlow: .gameZone
+        ),
+        GameDefinition(
+            id: "lineage-health",
+            name: "天堂健康服",
+            serviceCode: "600037",
+            serviceRegion: "T7",
+            imageName: "lineage.jpg",
+            executableName: "Lineage.exe",
+            launchStyle: .manual,
+            accountFlow: .gameZone
+        ),
+        GameDefinition(
+            id: "lineage-free",
+            name: "天堂免費服",
+            serviceCode: "600041",
+            serviceRegion: "BE",
+            imageName: "lineage.jpg",
+            executableName: "Lineage.exe",
+            launchStyle: .manual,
+            accountFlow: .gameZone
+        ),
+        GameDefinition(
+            id: "mabinogi",
+            name: "新瑪奇",
+            serviceCode: "600309",
+            serviceRegion: "A2",
+            imageName: "mabinogi.jpg",
+            executableName: "mabinogi.exe",
+            launchStyle: .mabinogi,
+            accountFlow: .gameZone
+        ),
+        GameDefinition(
+            id: "elsword",
+            name: "艾爾之光",
+            serviceCode: "300148",
+            serviceRegion: "AF",
+            imageName: "elsword.jpg",
+            executableName: "elsword.exe",
+            launchStyle: .elsword,
+            accountFlow: .gameZone
+        ),
+        GameDefinition(
+            id: "dragon-nest",
+            name: "新龍之谷",
+            serviceCode: "611653",
+            serviceRegion: "VA",
+            imageName: "dragon-nest.jpg",
+            executableName: "DragonNest.exe",
+            launchStyle: .manual,
+            accountFlow: .gameZone
+        ),
+        GameDefinition(
+            id: "cso",
+            name: "絕對武力 Online",
+            serviceCode: "610153",
+            serviceRegion: "TN",
+            imageName: "cso.jpg",
+            executableName: "cstrike-online.exe",
+            launchStyle: .manual,
+            accountFlow: .accountsManagement
+        ),
+    ]
+}
+
 enum AppMode: String, CaseIterable, Identifiable {
     case standard
     case advanced

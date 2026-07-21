@@ -3,8 +3,6 @@ import Foundation
 
 @MainActor
 final class BeanfunClient {
-    static let serviceCode = "610074"
-    static let serviceRegion = "T9"
     static let host = "tw.beanfun.com"
     static let loginHost = "tw.newlogin.beanfun.com"
     static let modernLoginHost = "login.beanfun.com"
@@ -193,51 +191,68 @@ final class BeanfunClient {
         secret("  Cookie: \(cookieHeader(for: homeURL))")
     }
 
-    func fetchAccounts() async throws -> [GameAccount] {
-        log("[帳號] 取得楓之谷帳號清單")
+    func fetchAccounts(for game: GameDefinition) async throws -> [GameAccount] {
+        log("[帳號] 取得\(game.name)帳號清單（\(game.serviceKey)）")
         guard let webToken = cookieValue(named: "bfWebToken") else {
             throw BeanfunError.parse("Cookie 中缺少 bfWebToken，無法授權 game_zone")
         }
         let homeURL = try makeURL("https://\(Self.host)/")
-        let authURL = try url(
-            "https://\(Self.host)/beanfun_block/auth.aspx",
-            query: [
-                "channel": "game_zone",
-                "page_and_query": "game_start.aspx?service_code_and_region=\(Self.serviceCode)_\(Self.serviceRegion)",
-                "web_token": webToken,
-            ]
-        )
-        log("  先以 bfWebToken 授權 game_zone")
-        _ = try await request(authURL, referer: homeURL)
-
-        let listURL = try url(
-            "https://\(Self.host)/beanfun_block/game_zone/game_server_account_list.aspx",
-            query: [
-                "sc": Self.serviceCode,
-                "sr": Self.serviceRegion,
-                "dt": Self.method2Timestamp(),
-            ]
-        )
-        let response = try await request(listURL)
-        let html = try text(response.data)
-        let regex = try NSRegularExpression(pattern: #"<div\b[^>]*>"#, options: [.caseInsensitive])
-        let range = NSRange(html.startIndex..., in: html)
-        let accounts = regex.matches(in: html, range: range).compactMap { match -> GameAccount? in
-            guard let tagRange = Range(match.range, in: html) else { return nil }
-            let tag = String(html[tagRange])
-            guard let id = Self.attribute("id", in: tag),
-                  let sn = Self.attribute("sn", in: tag),
-                  sn.allSatisfy(\.isNumber),
-                  let name = Self.attribute("name", in: tag),
-                  !id.isEmpty, !name.isEmpty else { return nil }
-            return GameAccount(
-                id: id,
-                sn: sn,
-                displayName: Self.decodeHTML(name)
+        let authURL: URL
+        switch game.accountFlow {
+        case .gameZone:
+            authURL = try url(
+                "https://\(Self.host)/beanfun_block/auth.aspx",
+                query: [
+                    "channel": "game_zone",
+                    "page_and_query": "game_start.aspx?service_code_and_region=\(game.serviceKey)",
+                    "web_token": webToken,
+                ]
+            )
+        case .accountsManagement:
+            authURL = try url(
+                "https://\(Self.host)/TW/auth.aspx",
+                query: [
+                    "channel": "accounts_management",
+                    "page_and_query": "01.aspx?ServiceCode=\(game.serviceCode)&ServiceRegion=\(game.serviceRegion)",
+                    "web_token": webToken,
+                ]
             )
         }
+        log("  先以 bfWebToken 授權 \(game.accountFlow.rawValue)")
+        let authResponse = try await request(authURL, referer: homeURL)
+        var accounts = parseAccounts(from: try text(authResponse.data))
+
+        // CSO's public launcher routes through accounts_management. Some
+        // accounts still expose the standard game_zone account list, so use it
+        // as a compatibility fallback without replacing the official route.
+        if accounts.isEmpty, game.accountFlow == .accountsManagement {
+            let fallbackURL = try url(
+                "https://\(Self.host)/beanfun_block/auth.aspx",
+                query: [
+                    "channel": "game_zone",
+                    "page_and_query": "game_start.aspx?service_code_and_region=\(game.serviceKey)",
+                    "web_token": webToken,
+                ]
+            )
+            log("  accounts_management 未直接列出帳號，嘗試 game_zone 相容流程")
+            let fallback = try await request(fallbackURL, referer: homeURL)
+            accounts = parseAccounts(from: try text(fallback.data))
+        }
+
+        if accounts.isEmpty {
+            let listURL = try url(
+                "https://\(Self.host)/beanfun_block/game_zone/game_server_account_list.aspx",
+                query: [
+                    "sc": game.serviceCode,
+                    "sr": game.serviceRegion,
+                    "dt": Self.method2Timestamp(),
+                ]
+            )
+            let response = try await request(listURL)
+            accounts = parseAccounts(from: try text(response.data))
+        }
         guard !accounts.isEmpty else {
-            throw BeanfunError.parse("帳號清單為空；登入可能已失效或尚未建立楓之谷帳號")
+            throw BeanfunError.parse("帳號清單為空；登入可能已失效或尚未建立\(game.name)帳號")
         }
         for account in accounts {
             log("  id=\(account.id)，sn=\(account.sn)，name=\(account.displayName)")
@@ -245,13 +260,31 @@ final class BeanfunClient {
         return accounts.sorted { $0.sn < $1.sn }
     }
 
-    func fetchOTP(for account: GameAccount) async throws -> OTPResult {
-        log("[OTP 1/6] 初始化遊戲啟動：id=\(account.id)，sn=\(account.sn)，name=\(account.displayName)")
+    private func parseAccounts(from html: String) -> [GameAccount] {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"<div\b[^>]*>"#,
+            options: [.caseInsensitive]
+        ) else { return [] }
+        let range = NSRange(html.startIndex..., in: html)
+        return regex.matches(in: html, range: range).compactMap { match -> GameAccount? in
+            guard let tagRange = Range(match.range, in: html) else { return nil }
+            let tag = String(html[tagRange])
+            guard let id = Self.attribute("id", in: tag),
+                  let sn = Self.attribute("sn", in: tag),
+                  sn.allSatisfy(\.isNumber),
+                  let name = Self.attribute("name", in: tag),
+                  !id.isEmpty, !name.isEmpty else { return nil }
+            return GameAccount(id: id, sn: sn, displayName: Self.decodeHTML(name))
+        }
+    }
+
+    func fetchOTP(for account: GameAccount, game: GameDefinition) async throws -> OTPResult {
+        log("[OTP 1/6] 初始化\(game.name)啟動：id=\(account.id)，sn=\(account.sn)，name=\(account.displayName)")
         let step2URL = try url(
             "https://\(Self.host)/beanfun_block/game_zone/game_start_step2.aspx",
             query: [
-                "service_code": Self.serviceCode,
-                "service_region": Self.serviceRegion,
+                "service_code": game.serviceCode,
+                "service_region": game.serviceRegion,
                 "sotp": account.sn,
                 "dt": Self.method2Timestamp(),
             ]
@@ -285,8 +318,8 @@ final class BeanfunClient {
             recordURL,
             method: "POST",
             form: [
-                "service_code": Self.serviceCode,
-                "service_region": Self.serviceRegion,
+                "service_code": game.serviceCode,
+                "service_region": game.serviceRegion,
                 "service_account_id": start.accountID,
                 "sotp": start.sn,
                 "service_account_display_name": start.displayName,
@@ -337,8 +370,8 @@ final class BeanfunClient {
                 "WebToken": webToken,
                 "SecretCode": secretCode,
                 "ppppp": Self.ppppp,
-                "ServiceCode": Self.serviceCode,
-                "ServiceRegion": Self.serviceRegion,
+                "ServiceCode": game.serviceCode,
+                "ServiceRegion": game.serviceRegion,
                 "ServiceAccount": start.accountID,
                 "CreateTime": start.createTime,
                 "d": String(Int(Date().timeIntervalSince1970 * 1000)),
@@ -370,9 +403,8 @@ final class BeanfunClient {
         guard let otp = String(data: plaintext, encoding: .utf8), !otp.isEmpty else {
             throw BeanfunError.parse("OTP 解密結果不是 UTF-8")
         }
-        // MapleStory expects Beanfun's ServiceAccountID (the T9... value),
-        // not the user-editable service-account display name.
-        let commandLine = MapleStoryLaunch.commandLine(accountID: account.id, otp: otp)
+        // Games expect Beanfun's ServiceAccountID, not the editable display name.
+        let commandLine = game.commandLine(accountID: account.id, otp: otp)
         log("  OTP 解密成功：\(otp.count) 字元")
         secret("  OTP=\(otp)")
         return OTPResult(value: otp, retrievedAt: Date(), commandLine: commandLine)

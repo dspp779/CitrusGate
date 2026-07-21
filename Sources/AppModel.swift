@@ -5,10 +5,12 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class AppModel: ObservableObject {
-    private static let executablePathKey = "MapleStoryExecutablePath"
+    private static let legacyMapleStoryPathKey = "MapleStoryExecutablePath"
+    private static let executablePathPrefix = "ExecutablePath."
 
     @Published private(set) var mode: AppMode = .defaultMode
-    @Published var screen: AppScreen = .welcome
+    @Published var screen: AppScreen = .games
+    @Published private(set) var selectedGameID: String?
     @Published var qrImage: NSImage?
     @Published var qrSecondsRemaining = 60
     @Published var accounts: [GameAccount] = []
@@ -23,9 +25,10 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var logText = ""
     @Published private(set) var launchedAccountID: String?
-    @Published var maplestoryExecutablePath: String {
+    @Published var executablePath: String {
         didSet {
-            defaults.set(maplestoryExecutablePath, forKey: Self.executablePathKey)
+            guard let selectedGame else { return }
+            defaults.set(executablePath, forKey: executablePathKey(for: selectedGame))
         }
     }
 
@@ -33,14 +36,26 @@ final class AppModel: ObservableObject {
     private var loginTask: Task<Void, Never>?
     private var otpTask: Task<Void, Never>?
     private var otpCountdownTask: Task<Void, Never>?
-    private var didPromptForExecutable = false
     private lazy var client = BeanfunClient { [weak self] message in
         self?.appendLog(message)
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        maplestoryExecutablePath = defaults.string(forKey: Self.executablePathKey) ?? ""
+        selectedGameID = nil
+        executablePath = ""
+        if defaults.string(forKey: Self.executablePathPrefix + GameDefinition.mapleStory.id) == nil,
+           let legacyPath = defaults.string(forKey: Self.legacyMapleStoryPathKey),
+           !legacyPath.isEmpty {
+            defaults.set(legacyPath, forKey: Self.executablePathPrefix + GameDefinition.mapleStory.id)
+        }
+    }
+
+    var games: [GameDefinition] { GameDefinition.all }
+
+    var selectedGame: GameDefinition? {
+        guard let selectedGameID else { return nil }
+        return games.first { $0.id == selectedGameID }
     }
 
     var selectedAccount: GameAccount? {
@@ -49,16 +64,8 @@ final class AppModel: ObservableObject {
     }
 
     func handleInitialAppearance() {
-        guard !didPromptForExecutable else { return }
-        didPromptForExecutable = true
-        guard mode == .standard else { return }
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(250))
-            guard let self, self.mode == .standard else { return }
-            if self.normalizedExecutablePath.isEmpty {
-                self.chooseMapleStoryExecutable()
-            }
-        }
+        // General mode intentionally starts at game selection. Requesting an
+        // executable before that would make it unclear which game is being set.
     }
 
     func setMode(_ newMode: AppMode) {
@@ -68,11 +75,11 @@ final class AppModel: ObservableObject {
         if newMode == .standard {
             setAutoRefresh(false)
             if screen == .otp { screen = .accounts }
-            if normalizedExecutablePath.isEmpty {
+            if selectedGame != nil, normalizedExecutablePath.isEmpty {
                 Task { [weak self] in
                     await Task.yield()
                     guard let self else { return }
-                    self.chooseMapleStoryExecutable()
+                    self.chooseExecutable()
                 }
             }
         } else if otp != nil, screen == .accounts {
@@ -80,7 +87,39 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func selectGame(_ game: GameDefinition) {
+        loginTask?.cancel()
+        otpTask?.cancel()
+        otpCountdownTask?.cancel()
+        selectedGameID = game.id
+        executablePath = defaults.string(forKey: executablePathKey(for: game)) ?? ""
+        resetGameSession()
+        screen = .welcome
+        statusMessage = "已選擇\(game.name)"
+        if mode == .standard, normalizedExecutablePath.isEmpty {
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(180))
+                guard let self, self.selectedGameID == game.id else { return }
+                self.chooseExecutable()
+            }
+        }
+    }
+
+    func showGamePicker() {
+        loginTask?.cancel()
+        otpTask?.cancel()
+        otpCountdownTask?.cancel()
+        resetGameSession()
+        screen = .games
+        statusMessage = "請選擇遊戲"
+    }
+
     func startLogin() {
+        guard let game = selectedGame else {
+            errorMessage = "請先選擇遊戲"
+            screen = .games
+            return
+        }
         loginTask?.cancel()
         otpTask?.cancel()
         otpCountdownTask?.cancel()
@@ -120,7 +159,7 @@ final class AppModel: ObservableObject {
                         statusMessage = "掃碼成功，正在交換登入 Cookie…"
                         isBusy = true
                         try await client.completeQRLogin()
-                        let loadedAccounts = try await client.fetchAccounts()
+                        let loadedAccounts = try await client.fetchAccounts(for: game)
                         accounts = loadedAccounts
                         selectedAccountID = loadedAccounts.first?.id
                         screen = .accounts
@@ -129,7 +168,7 @@ final class AppModel: ObservableObject {
                             statusMessage = "登入成功，正在以 \(loadedAccounts[0].displayName) 開啟遊戲…"
                             launchSelectedAccount()
                         } else {
-                            statusMessage = "登入成功，請選擇楓之谷帳號"
+                            statusMessage = "登入成功，請選擇\(game.name)帳號"
                         }
                         return
                     case .expired:
@@ -165,8 +204,12 @@ final class AppModel: ObservableObject {
     }
 
     private func retrieveOTP(launchWhenReady: Bool) {
+        guard let game = selectedGame else {
+            errorMessage = "請先選擇遊戲"
+            return
+        }
         guard let account = selectedAccount else {
-            errorMessage = "請先選擇楓之谷帳號"
+            errorMessage = "請先選擇\(game.name)帳號"
             return
         }
         otpTask?.cancel()
@@ -177,13 +220,13 @@ final class AppModel: ObservableObject {
         otpTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await client.fetchOTP(for: account)
+                let result = try await client.fetchOTP(for: account, game: game)
                 try Task.checkCancellation()
                 otp = result
                 isBusy = false
                 if launchWhenReady {
                     statusMessage = "OTP 已取得，正在以 \(account.displayName) 開啟遊戲…"
-                    launchMapleStory()
+                    launchGame()
                 } else {
                     screen = .otp
                     statusMessage = "OTP 已更新"
@@ -222,6 +265,12 @@ final class AppModel: ObservableObject {
         statusMessage = "OTP 已複製"
     }
 
+    func copyAccountID() {
+        guard let value = selectedAccount?.id else { return }
+        copy(value)
+        statusMessage = "遊戲帳號已複製"
+    }
+
     func copyCommandLine() {
         guard let value = otp?.commandLine else { return }
         copy(value)
@@ -233,10 +282,15 @@ final class AppModel: ObservableObject {
         statusMessage = "Debug log 已複製"
     }
 
-    func chooseMapleStoryExecutable() {
+    func chooseExecutable() {
+        guard let game = selectedGame else {
+            errorMessage = "請先選擇遊戲"
+            screen = .games
+            return
+        }
         let panel = NSOpenPanel()
-        panel.title = "選擇 MapleStory.exe"
-        panel.message = "選擇要由 Cyder 開啟的 MapleStory.exe"
+        panel.title = "選擇 \(game.executableName)"
+        panel.message = "選擇要由 Cyder 開啟的\(game.name)主程式"
         panel.prompt = "選擇"
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -244,21 +298,25 @@ final class AppModel: ObservableObject {
         panel.allowedContentTypes = [UTType(filenameExtension: "exe") ?? .data]
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        maplestoryExecutablePath = url.path
-        statusMessage = "已記住 MapleStory.exe 位置"
+        executablePath = url.path
+        statusMessage = "已記住\(game.name)主程式位置"
     }
 
-    func launchMapleStory() {
+    func launchGame() {
+        guard let game = selectedGame else {
+            errorMessage = "請先選擇遊戲"
+            return
+        }
         let path = normalizedExecutablePath
         guard !path.isEmpty else {
-            errorMessage = "請先選擇 MapleStory.exe"
+            errorMessage = "請先選擇 \(game.executableName)"
             return
         }
 
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
               !isDirectory.boolValue else {
-            errorMessage = "找不到 MapleStory.exe：\(path)"
+            errorMessage = "找不到\(game.name)主程式：\(path)"
             return
         }
         guard URL(fileURLWithPath: path).pathExtension.lowercased() == "exe" else {
@@ -275,7 +333,7 @@ final class AppModel: ObservableObject {
         let process = Process()
         let standardError = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = MapleStoryLaunch.openArguments(
+        process.arguments = game.openArguments(
             executablePath: path,
             accountID: account.id,
             otp: otp.value
@@ -290,8 +348,13 @@ final class AppModel: ObservableObject {
                 self.isBusy = false
                 if process.terminationStatus == 0 {
                     self.launchedAccountID = account.id
-                    self.statusMessage = "已透過 Cyder 啟動 MapleStory.exe"
-                    self.appendLog("執行 open -n：executable=\(path)，account=\(account.id)")
+                    if game.supportsAutomaticLogin {
+                        self.statusMessage = "已透過 Cyder 啟動\(game.name)"
+                    } else {
+                        self.copy(otp.value)
+                        self.statusMessage = "已啟動\(game.name)，OTP 已複製"
+                    }
+                    self.appendLog("執行 open -n：game=\(game.serviceKey)，executable=\(path)，account=\(account.id)")
                 } else {
                     let message = errorText.flatMap { $0.isEmpty ? nil : $0 }
                         ?? "open 結束代碼 \(process.terminationStatus)"
@@ -303,7 +366,7 @@ final class AppModel: ObservableObject {
         }
 
         isBusy = true
-        statusMessage = "正在以 open -n 透過 Cyder 啟動楓之谷…"
+        statusMessage = "正在以 open -n 透過 Cyder 啟動\(game.name)…"
         do {
             try process.run()
         } catch {
@@ -316,11 +379,26 @@ final class AppModel: ObservableObject {
         otpCountdownTask?.cancel()
         otpSecondsRemaining = 0
         screen = .accounts
-        statusMessage = "請選擇楓之谷帳號"
+        statusMessage = "請選擇\(selectedGame?.name ?? "遊戲")帳號"
     }
 
     private var normalizedExecutablePath: String {
-        maplestoryExecutablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func executablePathKey(for game: GameDefinition) -> String {
+        Self.executablePathPrefix + game.id
+    }
+
+    private func resetGameSession() {
+        errorMessage = nil
+        accounts = []
+        selectedAccountID = nil
+        otp = nil
+        launchedAccountID = nil
+        qrImage = nil
+        qrSecondsRemaining = 60
+        isBusy = false
     }
 
     func clearError() {

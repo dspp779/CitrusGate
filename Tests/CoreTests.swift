@@ -6,8 +6,10 @@ enum CoreTests {
         try testKnownDESVector()
         try testHexDecoder()
         try testMapleStoryLaunchArguments()
+        try testMultiGameCatalog()
+        try testGameLaunchArguments()
         try testAppModes()
-        print("CoreTests: 4 tests passed")
+        print("CoreTests: 6 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -48,6 +50,47 @@ enum CoreTests {
         try expect(AppMode.defaultMode == .standard, "standard mode should be the default")
         try expect(AppMode.standard.title == "一般模式", "standard mode title mismatch")
         try expect(AppMode.advanced.title == "進階模式", "advanced mode title mismatch")
+    }
+
+    private static func testMultiGameCatalog() throws {
+        let games = GameDefinition.all
+        try expect(games.count == 9, "expected nine supported Beanfun services")
+        try expect(Set(games.map(\.id)).count == games.count, "game IDs must be unique")
+        try expect(!games.contains { $0.name.contains("爆爆王") }, "BnB must not be included")
+        try expect(games.contains { $0.serviceKey == "600309_A2" }, "Mabinogi service missing")
+        try expect(games.contains { $0.serviceKey == "300148_AF" }, "Elsword service missing")
+        try expect(games.contains { $0.serviceKey == "611653_VA" }, "Dragon Nest service missing")
+        try expect(games.contains { $0.serviceKey == "610153_TN" }, "CSO service missing")
+    }
+
+    private static func testGameLaunchArguments() throws {
+        let mabinogi = try require(
+            GameDefinition.all.first { $0.id == "mabinogi" },
+            "Mabinogi definition missing"
+        )
+        try expect(
+            mabinogi.gameArguments(accountID: "A2ACCOUNT", otp: "OTP123")
+                == ["/N:A2ACCOUNT", "/V:OTP123", "/T:gamania"],
+            "Mabinogi arguments mismatch"
+        )
+        let elsword = try require(
+            GameDefinition.all.first { $0.id == "elsword" },
+            "Elsword definition missing"
+        )
+        try expect(
+            elsword.gameArguments(accountID: "AFACCOUNT", otp: "OTP456")
+                == ["AFACCOUNT", "OTP456", "TW"],
+            "Elsword arguments mismatch"
+        )
+        let lineage = try require(
+            GameDefinition.all.first { $0.id == "lineage" },
+            "Lineage definition missing"
+        )
+        try expect(
+            lineage.openArguments(executablePath: "/Games/Lineage.exe", accountID: "id", otp: "otp")
+                == ["-n", "/Games/Lineage.exe"],
+            "manual launch must not pass unverified arguments"
+        )
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

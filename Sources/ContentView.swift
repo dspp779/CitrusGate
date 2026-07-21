@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var model: AppModel
     @State private var showDebug = false
+    @State private var hoveredGameID: String?
 
     var body: some View {
         Group {
@@ -58,14 +59,14 @@ struct ContentView: View {
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Beanfun 楓之谷 OTP")
+                Text("Beanfun OTP")
                     .font(.title2.bold())
-                Text("\(model.mode.title) · 原生 macOS 工具")
+                Text("\(model.selectedGame?.name ?? "選擇遊戲") · \(model.mode.title)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if model.screen != .welcome {
+            if model.screen != .welcome, model.screen != .games {
                 Button("重新登入") { model.startLogin() }
                     .disabled(model.isBusy)
             }
@@ -78,6 +79,8 @@ struct ContentView: View {
     @ViewBuilder
     private var standardContent: some View {
         switch model.screen {
+        case .games:
+            gamePickerView
         case .welcome:
             standardWelcomeView
         case .qr:
@@ -87,11 +90,60 @@ struct ContentView: View {
         }
     }
 
+    private var gamePickerView: some View {
+        VStack(spacing: 12) {
+            Text("選擇遊戲")
+                .font(.title2.bold())
+            ScrollView {
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(), spacing: 8),
+                        count: 3
+                    ),
+                    spacing: 10
+                ) {
+                    ForEach(model.games) { game in
+                        Button {
+                            model.selectGame(game)
+                        } label: {
+                            VStack(spacing: 6) {
+                                GameArtwork(game: game)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 72)
+                                Text(game.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.center)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .padding(6)
+                            .frame(maxWidth: .infinity, alignment: .top)
+                            .background(
+                                hoveredGameID == game.id
+                                    ? Color.secondary.opacity(0.10)
+                                    : Color.clear
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 11))
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { isHovered in
+                            hoveredGameID = isHovered ? game.id : nil
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 440, maxHeight: .infinity)
+    }
+
     private var standardWelcomeView: some View {
         VStack(spacing: 18) {
-            Image(systemName: "qrcode.viewfinder")
-                .font(.system(size: 70, weight: .light))
-                .foregroundStyle(.orange)
+            if let game = model.selectedGame {
+                GameArtwork(game: game)
+                    .frame(width: 150, height: 100)
+                Text(game.name)
+                    .font(.title2.bold())
+            }
             if model.isBusy {
                 ProgressView("正在產生登入 QR Code…")
             } else {
@@ -103,6 +155,8 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             }
+            Button("選擇其他遊戲") { model.showGamePicker() }
+                .buttonStyle(.link)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -140,6 +194,8 @@ struct ContentView: View {
     @ViewBuilder
     private var advancedContent: some View {
         switch model.screen {
+        case .games:
+            gamePickerView
         case .welcome:
             welcomeView
         case .qr:
@@ -160,7 +216,7 @@ struct ContentView: View {
                 VStack(spacing: 7) {
                     Text("使用 Gama Play 掃碼登入")
                         .font(.title3.bold())
-                    Text("登入成功後會自動列出楓之谷帳號，不需要事先知道 SN。")
+                    Text("登入成功後會自動列出\(model.selectedGame?.name ?? "遊戲")帳號，不需要事先知道 SN。")
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -181,6 +237,7 @@ struct ContentView: View {
                     .controlSize(.large)
                     .disabled(model.isBusy)
                 }
+                Button("選擇其他遊戲") { model.showGamePicker() }
             }
             .frame(maxWidth: .infinity, minHeight: 330)
             .padding()
@@ -218,36 +275,41 @@ struct ContentView: View {
     }
 
     private var standardAccountView: some View {
-        GroupBox(model.accounts.count == 1 ? "開啟楓之谷" : "選擇楓之谷帳號") {
+        GroupBox(model.accounts.count == 1
+                 ? "開啟\(model.selectedGame?.name ?? "遊戲")"
+                 : "選擇\(model.selectedGame?.name ?? "遊戲")帳號") {
             VStack(spacing: 16) {
                 if model.accounts.count > 1 {
                     Text("請選擇要使用的帳號")
                         .foregroundStyle(.secondary)
-                    VStack(spacing: 8) {
-                        ForEach(model.accounts) { account in
-                            Button {
-                                model.selectAccount(account)
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: model.selectedAccountID == account.id
-                                          ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(model.selectedAccountID == account.id
-                                                         ? .orange : .secondary)
-                                    Text(account.displayName)
-                                        .font(.headline)
-                                    Spacer()
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach(model.accounts) { account in
+                                Button {
+                                    model.selectAccount(account)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: model.selectedAccountID == account.id
+                                              ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(model.selectedAccountID == account.id
+                                                             ? .orange : .secondary)
+                                        Text(account.displayName)
+                                            .font(.headline)
+                                        Spacer()
+                                    }
+                                    .contentShape(Rectangle())
+                                    .padding(12)
+                                    .background(
+                                        model.selectedAccountID == account.id
+                                            ? Color.orange.opacity(0.10) : Color.secondary.opacity(0.05)
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
-                                .contentShape(Rectangle())
-                                .padding(12)
-                                .background(
-                                    model.selectedAccountID == account.id
-                                        ? Color.orange.opacity(0.10) : Color.secondary.opacity(0.05)
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
+                    .frame(maxHeight: 270)
                 } else if let account = model.selectedAccount {
                     Image(systemName: "person.crop.circle.fill")
                         .font(.system(size: 54))
@@ -264,9 +326,17 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                 } else if let account = model.selectedAccount,
                           model.launchedAccountID == account.id {
-                    Label("以 \(account.displayName) 開啟遊戲，已啟動", systemImage: "checkmark.circle.fill")
-                        .font(.headline)
-                        .foregroundStyle(.green)
+                    VStack(spacing: 10) {
+                        Label("以 \(account.displayName) 開啟遊戲，已啟動", systemImage: "checkmark.circle.fill")
+                            .font(.headline)
+                            .foregroundStyle(.green)
+                        if model.selectedGame?.supportsAutomaticLogin == false {
+                            HStack {
+                                Button("複製帳號") { model.copyAccountID() }
+                                Button("複製 OTP") { model.copyOTP() }
+                            }
+                        }
+                    }
                 } else if let account = model.selectedAccount {
                     Button {
                         model.launchSelectedAccount()
@@ -277,6 +347,9 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 }
+
+                Button("選擇其他遊戲") { model.showGamePicker() }
+                    .buttonStyle(.link)
             }
             .frame(maxWidth: .infinity, minHeight: 260)
             .padding()
@@ -284,7 +357,7 @@ struct ContentView: View {
     }
 
     private var advancedAccountView: some View {
-        GroupBox("選擇楓之谷帳號") {
+        GroupBox("選擇\(model.selectedGame?.name ?? "遊戲")帳號") {
             VStack(alignment: .leading, spacing: 14) {
                 Text("已從 Beanfun 帳號清單取得 \(model.accounts.count) 個帳號")
                     .foregroundStyle(.secondary)
@@ -319,6 +392,7 @@ struct ContentView: View {
                     }
                 }
                 HStack {
+                    Button("選擇其他遊戲") { model.showGamePicker() }
                     Spacer()
                     Button {
                         model.retrieveOTP()
@@ -355,6 +429,9 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     }
                     HStack {
+                        Button { model.copyAccountID() } label: {
+                            Label("複製帳號", systemImage: "person.text.rectangle")
+                        }
                         Button { model.copyOTP() } label: {
                             Label("複製 OTP", systemImage: "doc.on.doc")
                         }
@@ -403,15 +480,22 @@ struct ContentView: View {
 
             GroupBox("遊戲啟動參數") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(model.otp?.commandLine ?? "")
-                        .font(.callout.monospaced())
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if model.selectedGame?.supportsAutomaticLogin == true {
+                        Text(model.otp?.commandLine ?? "")
+                            .font(.callout.monospaced())
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Text("此遊戲尚無可核對的命令列登入格式；啟動主程式時會自動複製 OTP。")
+                            .foregroundStyle(.secondary)
+                    }
                     HStack {
                         Button { model.copyCommandLine() } label: {
                             Label("複製啟動參數", systemImage: "terminal")
                         }
+                        .disabled(model.selectedGame?.supportsAutomaticLogin != true)
                         Spacer()
+                        Button("選擇其他遊戲") { model.showGamePicker() }
                         Button("選擇其他帳號") { model.chooseAnotherAccount() }
                     }
                 }
@@ -425,22 +509,24 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                     HStack(spacing: 8) {
                         TextField(
-                            "MapleStory.exe 位置",
-                            text: $model.maplestoryExecutablePath
+                            "\(model.selectedGame?.executableName ?? ".exe") 位置",
+                            text: $model.executablePath
                         )
                         .textFieldStyle(.roundedBorder)
-                        Button("選擇…") { model.chooseMapleStoryExecutable() }
+                        Button("選擇…") { model.chooseExecutable() }
                     }
                     HStack {
-                        Text("使用 open -n，並將伺服器、帳號 ID 與 OTP 放在 --args 後傳入。")
+                        Text(model.selectedGame?.supportsAutomaticLogin == true
+                             ? "使用 open -n，並將帳號 ID 與 OTP 放在 --args 後傳入。"
+                             : "使用 open -n 啟動；OTP 會放入剪貼簿供登入使用。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Button { model.launchMapleStory() } label: {
-                            Label("啟動 MapleStory", systemImage: "play.fill")
+                        Button { model.launchGame() } label: {
+                            Label("啟動\(model.selectedGame?.name ?? "遊戲")", systemImage: "play.fill")
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(model.maplestoryExecutablePath.isEmpty || model.isBusy)
+                        .disabled(model.executablePath.isEmpty || model.isBusy)
                     }
                 }
                 .padding(10)
@@ -496,6 +582,37 @@ struct ContentView: View {
         .padding(12)
         .background(Color.secondary.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct GameArtwork: View {
+    let game: GameDefinition
+
+    var body: some View {
+        Group {
+            if let url = Bundle.main.url(
+                forResource: game.imageName,
+                withExtension: nil,
+                subdirectory: "GameImages"
+            ), let image = NSImage(contentsOf: url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [.cyan.opacity(0.9), .purple.opacity(0.9)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Image(systemName: "gamecontroller.fill")
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipped()
+        .accessibilityLabel(game.name)
     }
 }
 

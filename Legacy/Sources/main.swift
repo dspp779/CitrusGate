@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         assert(GameDefinition.all.count == 9)
         let controller = AppController()
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 400),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false

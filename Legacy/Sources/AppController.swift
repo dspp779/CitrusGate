@@ -42,7 +42,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private let backButton = NSButton(title: "選擇其他遊戲", target: nil, action: nil)
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 520))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 400))
         buildUI()
     }
 
@@ -78,12 +78,12 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         scrollView.hasVerticalScroller = true
         scrollView.borderType = .bezelBorder
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.heightAnchor.constraint(equalToConstant: 260).isActive = true
+        scrollView.heightAnchor.constraint(equalToConstant: 210).isActive = true
 
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.widthAnchor.constraint(equalToConstant: 220).isActive = true
-        imageView.heightAnchor.constraint(equalToConstant: 220).isActive = true
+        imageView.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        imageView.heightAnchor.constraint(equalToConstant: 180).isActive = true
 
         qrStatusLabel.alignment = .center
         qrStatusLabel.font = NSFont.systemFont(ofSize: 12)
@@ -103,7 +103,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         accountField.drawsBackground = false
 
         otpField.alignment = .center
-        if let base = NSFont.userFixedPitchFont(ofSize: 36) {
+        if let base = NSFont.userFixedPitchFont(ofSize: 32) {
             otpField.font = NSFontManager.shared.convert(base, toHaveTrait: .boldFontMask)
         }
         otpField.isEditable = false
@@ -142,8 +142,8 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         ])
         root.orientation = .vertical
         root.alignment = .centerX
-        root.spacing = 14
-        root.edgeInsets = NSEdgeInsets(top: 20, left: 0, bottom: 20, right: 0)
+        root.spacing = 12
+        root.edgeInsets = NSEdgeInsets(top: 16, left: 0, bottom: 16, right: 0)
         root.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(root)

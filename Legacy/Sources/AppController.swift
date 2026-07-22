@@ -181,10 +181,15 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         tableView.scrollRowToVisible(index)
     }
 
+    private func clearTableSelection() {
+        tableView.deselectAll(nil)
+        selectedAccountIndex = -1
+    }
+
     private func resetToGames() {
         stopTimers()
         accounts = []
-        selectedAccountIndex = -1
+        clearTableSelection()
         otpValue = ""
         otpField.stringValue = ""
         imageView.image = nil
@@ -349,7 +354,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                     self.selectedAccountIndex = 0
                     self.fetchOTP(for: accounts[0])
                 } else {
-                    self.selectedAccountIndex = -1
+                    self.clearTableSelection()
                     self.statusLabel.stringValue = "選擇\(game.name)帳號"
                     self.screen = .accounts
                 }

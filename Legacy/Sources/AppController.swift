@@ -82,10 +82,12 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
         qrStatusLabel.alignment = .center
         qrStatusLabel.font = NSFont.systemFont(ofSize: 12)
-        qrStatusLabel.textColor = .secondaryLabelColor
+        qrStatusLabel.textColor = NSColor.disabledControlTextColor
 
         otpField.alignment = .center
-        otpField.font = NSFont.monospacedDigitSystemFont(ofSize: 36, weight: .bold)
+        if let base = NSFont.userFixedPitchFont(ofSize: 36) {
+            otpField.font = NSFontManager.shared.convert(base, toHaveTrait: .boldFontMask)
+        }
         otpField.isEditable = false
         otpField.isSelectable = true
         otpField.isBezeled = false

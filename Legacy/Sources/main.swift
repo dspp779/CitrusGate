@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         assert(GameDefinition.all.count == 9)
+        let controller = AppController()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 520),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -12,11 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.title = "Beanfun OTP Legacy"
+        window.contentViewController = controller
         window.center()
-        window.contentView = NSView(frame: window.contentView!.bounds)
-        let label = NSTextField(labelWithString: "Legacy scaffold OK")
-        label.frame = NSRect(x: 20, y: 240, width: 380, height: 24)
-        window.contentView?.addSubview(label)
         window.makeKeyAndOrderFront(nil)
         self.window = window
         NSApp.activate(ignoringOtherApps: true)

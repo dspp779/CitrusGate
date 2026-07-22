@@ -1,8 +1,22 @@
 # Beanfun OTP for macOS
 
-原生 SwiftUI 小工具，用 Gama Play 掃描 QR code 登入 Beanfun，選擇遊戲與帳號後取得 OTP。成品不依賴 Python、Homebrew、Node.js 或第三方套件。
+本 repo 提供兩個 macOS 用戶端：**Beanfun OTP**（Modern，SwiftUI，macOS 13 以上，完整功能）與 **Beanfun OTP Legacy**（AppKit，macOS 10.12 以上，僅 QR 登入後複製 OTP）。Modern 版用 Gama Play 掃描 QR code 登入 Beanfun，選擇遊戲與帳號後取得 OTP。成品不依賴 Python、Homebrew、Node.js 或第三方套件。
 
 目前依 Beanfun 官方遊戲專區支援 9 個服務：新楓之谷、天堂國際伺服器、天堂、天堂健康伺服器、天堂免費伺服器、新瑪奇、艾爾之光、新龍之谷與絕對武力 Online。爆爆王未納入。
+
+## 兩個版本
+
+| | Beanfun OTP | Beanfun OTP Legacy |
+| --- | --- | --- |
+| 系統需求 | macOS 13 以上 | macOS 10.12 以上（Intel） |
+| 架構 | Apple Silicon + Intel | 僅 Intel (x86_64) |
+| 功能 | 完整（含啟動遊戲、進階模式） | 精簡：QR 登入後複製 OTP |
+| 建置 | `./build.sh` | `./build-legacy.sh` |
+| 輸出 | `dist/Beanfun OTP.app` | `dist/Beanfun OTP Legacy.app` |
+
+10.12–12 請用 Legacy。13 以上請用一般版。Beanfun 登入協定若變更，兩個版本的 client 都需要同步更新。
+
+以下「一般模式」與「進階模式」說明僅適用於 **Beanfun OTP**（Modern 版）。
 
 ## 一般模式
 
@@ -38,20 +52,6 @@ Wine 形式（僅新楓之谷）對齊 [`docs/macos-player-guide.md`](docs/macos
 Debug Log 會印出呼叫網址、表單參數、HTTP 狀態、Cookie、Token、SecretCode、LongPolling key、帳號資料及 OTP。依目前的 debug 設定，敏感內容預設不遮蔽；這些資料等同登入憑證，請勿公開分享。
 
 關閉最後一個視窗會直接結束 App。
-
-## 兩個版本
-
-| | Beanfun OTP | Beanfun OTP Legacy |
-| --- | --- | --- |
-| 系統需求 | macOS 13 以上 | macOS 10.12 以上（Intel） |
-| 架構 | Apple Silicon + Intel | 僅 Intel (x86_64) |
-| 功能 | 完整（含啟動遊戲、進階模式） | 精簡：QR 登入後複製 OTP |
-| 建置 | `./build.sh` | `./build-legacy.sh` |
-| 輸出 | `dist/Beanfun OTP.app` | `dist/Beanfun OTP Legacy.app` |
-
-10.12–12 請用 Legacy。13 以上請用一般版。Beanfun 登入協定若變更，兩個版本的 client 都需要同步更新。
-
-以下「一般模式」與「進階模式」說明僅適用於 **Beanfun OTP**（Modern 版）。
 
 ## 建置與測試
 

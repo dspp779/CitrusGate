@@ -54,13 +54,6 @@ cp "$build_dir/BeanfunOTPLegacy" "$app_dir/Contents/MacOS/BeanfunOTPLegacy"
 chmod 755 "$app_dir/Contents/MacOS/BeanfunOTPLegacy"
 
 # Embed Swift libs referenced via @rpath
-embedded=0
-while IFS= read -r lib; do
-    base="$(basename "$lib")"
-    # Resolve absolute path of linked @rpath libs from the just-built binary's load commands
-    true
-done < <(otool -L "$app_dir/Contents/MacOS/BeanfunOTPLegacy" | awk '/@rpath\/libswift/{print $1}')
-
 swift_root="$(xcrun --find swiftc)"
 swift_root="$(cd "$(dirname "$swift_root")/.." && pwd)"
 # Common locations for toolchain macosx swift libs:
@@ -85,7 +78,6 @@ otool -L "$app_dir/Contents/MacOS/BeanfunOTPLegacy" | awk '/@rpath\/libswift/{pr
     base="${ref#@rpath/}"
     if [[ -f "$SWIFT_LIB_DIR/$base" ]]; then
         cp "$SWIFT_LIB_DIR/$base" "$frameworks_dir/$base"
-        embedded=1
     fi
 done
 
@@ -105,5 +97,5 @@ done
 codesign --force --deep --sign - "$app_dir"
 echo "Built: $app_dir"
 echo "minos check:"
-otool -l "$app_dir/Contents/MacOS/BeanfunOTPLegacy" | rg -A3 "LC_VERSION_MIN_MACOSX|LC_BUILD_VERSION" | head -20
+otool -l "$app_dir/Contents/MacOS/BeanfunOTPLegacy" | grep -E -A3 'LC_VERSION_MIN_MACOSX|LC_BUILD_VERSION' | head -20
 lipo -info "$app_dir/Contents/MacOS/BeanfunOTPLegacy"

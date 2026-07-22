@@ -690,22 +690,27 @@ final class BeanfunClient {
         completion: @escaping (Result<OTPResult, Error>) -> Void
     ) {
         log("[OTP 4/6] 背景啟動 LongPolling")
-        if let pollURL = try? url(
-            "https://\(Self.host)/generic_handlers/get_result.ashx",
-            query: [
-                "meth": "GetResultByLongPolling",
-                "key": start.longPollingKey,
-                "_": String(Int(Date().timeIntervalSince1970 * 1000)),
-            ]
-        ) {
-            request(pollURL, referer: step2URL) { [weak self] result in
-                guard let self = self, self.generation == gen else { return }
-                switch result {
-                case let .success(response):
-                    self.log("  LongPolling 背景回應：\((try? self.text(response.data))?.prefix(240) ?? "")")
-                case let .failure(error):
-                    self.log("  LongPolling 背景結束：\(error.localizedDescription)")
-                }
+        let pollURL: URL
+        do {
+            pollURL = try url(
+                "https://\(Self.host)/generic_handlers/get_result.ashx",
+                query: [
+                    "meth": "GetResultByLongPolling",
+                    "key": start.longPollingKey,
+                    "_": String(Int(Date().timeIntervalSince1970 * 1000)),
+                ]
+            )
+        } catch {
+            finish(completion, .failure(error))
+            return
+        }
+        request(pollURL, referer: step2URL) { [weak self] result in
+            guard let self = self, self.generation == gen else { return }
+            switch result {
+            case let .success(response):
+                self.log("  LongPolling 背景回應：\((try? self.text(response.data))?.prefix(240) ?? "")")
+            case let .failure(error):
+                self.log("  LongPolling 背景結束：\(error.localizedDescription)")
             }
         }
         log("  LongPolling 已開始；主流程繼續")

@@ -24,6 +24,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private var pollTimer: Timer?
     private var countdownTimer: Timer?
     private var qrSecondsRemaining: Int = 60
+    private var loginCompletionInFlight = false
 
     // Outlets created in code.
     private let statusLabel = NSTextField(wrappingLabelWithString: "選擇遊戲")
@@ -190,6 +191,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     private func resetToGames() {
         stopTimers()
+        loginCompletionInFlight = false
         accounts = []
         clearTableSelection()
         otpValue = ""
@@ -258,6 +260,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private func startLogin() {
         guard let game = selectedGame else { return }
         stopTimers()
+        loginCompletionInFlight = false
         imageView.image = nil
         qrStatusLabel.stringValue = ""
         statusLabel.stringValue = "正在建立 \(game.name) 的 QR 登入…"
@@ -314,6 +317,8 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             case let .success(status):
                 switch status {
                 case .confirmed:
+                    guard !self.loginCompletionInFlight else { return }
+                    self.loginCompletionInFlight = true
                     self.stopTimers()
                     self.completeLogin()
                 case .expired:

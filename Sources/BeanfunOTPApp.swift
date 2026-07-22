@@ -27,7 +27,7 @@ struct BeanfunOTPApp: App {
             ContentView(model: model)
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 400, height: 520)
+        .defaultSize(width: 400, height: 440)
         .windowResizability(.contentSize)
         .commandsRemoved()
         .commands {

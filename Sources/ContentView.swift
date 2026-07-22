@@ -20,19 +20,25 @@ struct ContentView: View {
                     header
                     Divider()
                     ScrollView {
-                        VStack(spacing: 18) {
+                        VStack(spacing: 14) {
                             advancedContent
                             statusBar
                             debugSection
                         }
-                        .padding(24)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
                         .frame(maxWidth: .infinity)
                     }
                 }
             }
         }
         .frame(width: windowSize.width, height: windowSize.height)
-        .background(FixedWindowConfigurator(contentSize: windowSize))
+        .background(
+            FixedWindowConfigurator(
+                contentSize: windowSize,
+                extendContentUnderTitlebar: true
+            )
+        )
         .onAppear { model.handleInitialAppearance() }
         .alert(
             "Beanfun OTP",
@@ -49,8 +55,8 @@ struct ContentView: View {
 
     private var windowSize: CGSize {
         model.mode == .standard
-            ? CGSize(width: 400, height: 520)
-            : CGSize(width: 720, height: 780)
+            ? CGSize(width: 400, height: 440)
+            : CGSize(width: 720, height: 640)
     }
 
     private var header: some View {
@@ -71,8 +77,8 @@ struct ContentView: View {
                     .disabled(model.isBusy)
             }
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
         .background(.bar)
     }
 
@@ -109,7 +115,7 @@ struct ContentView: View {
                             VStack(spacing: 6) {
                                 GameArtwork(game: game)
                                     .frame(maxWidth: .infinity)
-                                    .frame(height: 72)
+                                    .frame(height: 64)
                                 Text(game.name)
                                     .font(.subheadline.weight(.semibold))
                                     .lineLimit(2)
@@ -137,10 +143,10 @@ struct ContentView: View {
     }
 
     private var standardWelcomeView: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             if let game = model.selectedGame {
                 GameArtwork(game: game)
-                    .frame(width: 150, height: 100)
+                    .frame(width: 132, height: 88)
                 Text(game.name)
                     .font(.title2.bold())
             }
@@ -163,16 +169,22 @@ struct ContentView: View {
 
     private var standardQRView: some View {
         VStack(spacing: 0) {
-            if let image = model.qrImage {
-                Image(nsImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 376, height: 376)
-                    .padding(12)
-                    .background(.white)
+            ZStack {
+                Color.white
+                if let image = model.qrImage {
+                    Image(nsImage: image)
+                        .interpolation(.none)
+                        .resizable()
+                        .aspectRatio(1, contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(8)
+                }
             }
-            VStack(spacing: 10) {
+            .frame(maxWidth: .infinity)
+            .frame(height: 340)
+            .ignoresSafeArea(edges: .top)
+
+            VStack(spacing: 8) {
                 Text("請使用 Gama Play App 掃描並確認登入")
                     .font(.headline)
                     .multilineTextAlignment(.center)
@@ -187,6 +199,8 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -209,11 +223,11 @@ struct ContentView: View {
 
     private var welcomeView: some View {
         GroupBox {
-            VStack(spacing: 22) {
+            VStack(spacing: 16) {
                 Image(systemName: "qrcode.viewfinder")
-                    .font(.system(size: 76, weight: .light))
+                    .font(.system(size: 56, weight: .light))
                     .foregroundStyle(.orange)
-                VStack(spacing: 7) {
+                VStack(spacing: 6) {
                     Text("使用 Gama Play 掃碼登入")
                         .font(.title3.bold())
                     Text("登入成功後會自動列出\(model.selectedGame?.name ?? "遊戲")帳號，不需要事先知道 SN。")
@@ -239,21 +253,21 @@ struct ContentView: View {
                 }
                 Button("選擇其他遊戲") { model.showGamePicker() }
             }
-            .frame(maxWidth: .infinity, minHeight: 330)
+            .frame(maxWidth: .infinity, minHeight: 240)
             .padding()
         }
     }
 
     private var qrView: some View {
         GroupBox("掃描登入 QR Code") {
-            VStack(spacing: 14) {
+            VStack(spacing: 12) {
                 if let image = model.qrImage {
                     Image(nsImage: image)
                         .interpolation(.none)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 270, height: 270)
-                        .padding(10)
+                        .frame(width: 220, height: 220)
+                        .padding(8)
                         .background(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
@@ -278,7 +292,7 @@ struct ContentView: View {
         GroupBox(model.accounts.count == 1
                  ? "開啟\(model.selectedGame?.name ?? "遊戲")"
                  : "選擇\(model.selectedGame?.name ?? "遊戲")帳號") {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 if model.accounts.count > 1 {
                     Text("請選擇要使用的帳號")
                         .foregroundStyle(.secondary)
@@ -298,7 +312,7 @@ struct ContentView: View {
                                         Spacer()
                                     }
                                     .contentShape(Rectangle())
-                                    .padding(12)
+                                    .padding(10)
                                     .background(
                                         model.selectedAccountID == account.id
                                             ? Color.orange.opacity(0.10) : Color.secondary.opacity(0.05)
@@ -309,10 +323,10 @@ struct ContentView: View {
                             }
                         }
                     }
-                    .frame(maxHeight: 270)
+                    .frame(maxHeight: 200)
                 } else if let account = model.selectedAccount {
                     Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 54))
+                        .font(.system(size: 44))
                         .foregroundStyle(.orange)
                     Text(account.displayName)
                         .font(.title2.bold())
@@ -351,14 +365,14 @@ struct ContentView: View {
                 Button("選擇其他遊戲") { model.showGamePicker() }
                     .buttonStyle(.link)
             }
-            .frame(maxWidth: .infinity, minHeight: 260)
+            .frame(maxWidth: .infinity, minHeight: 200)
             .padding()
         }
     }
 
     private var advancedAccountView: some View {
         GroupBox("選擇\(model.selectedGame?.name ?? "遊戲")帳號") {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text("已從 Beanfun 帳號清單取得 \(model.accounts.count) 個帳號")
                     .foregroundStyle(.secondary)
                 VStack(spacing: 8) {
@@ -410,9 +424,9 @@ struct ContentView: View {
     }
 
     private var otpView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             GroupBox {
-                VStack(spacing: 15) {
+                VStack(spacing: 12) {
                     if let account = model.selectedAccount {
                         Text(account.displayName)
                             .font(.title3.bold())
@@ -421,7 +435,7 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     }
                     Text(model.otp?.value ?? "—")
-                        .font(.system(size: 38, weight: .bold, design: .monospaced))
+                        .font(.system(size: 34, weight: .bold, design: .monospaced))
                         .textSelection(.enabled)
                     if let retrievedAt = model.otp?.retrievedAt {
                         Text("更新時間：\(retrievedAt.formatted(date: .omitted, time: .standard))")
@@ -556,7 +570,7 @@ struct ContentView: View {
                 .font(.callout)
             Spacer()
         }
-        .padding(12)
+        .padding(10)
         .background(Color.secondary.opacity(0.07))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
@@ -579,7 +593,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                 }
-                .frame(height: 220)
+                .frame(height: 160)
                 .background(Color.black.opacity(0.88))
                 .foregroundStyle(.green.opacity(0.9))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -588,9 +602,9 @@ struct ContentView: View {
                     Button("複製 Debug Log") { model.copyDebugLog() }
                 }
             }
-            .padding(.top, 10)
+            .padding(.top, 8)
         }
-        .padding(12)
+        .padding(10)
         .background(Color.secondary.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
@@ -629,6 +643,7 @@ private struct GameArtwork: View {
 
 private struct FixedWindowConfigurator: NSViewRepresentable {
     let contentSize: CGSize
+    var extendContentUnderTitlebar: Bool = false
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -643,12 +658,20 @@ private struct FixedWindowConfigurator: NSViewRepresentable {
     private func configure(_ view: NSView) {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
+            if extendContentUnderTitlebar {
+                window.styleMask.insert(.fullSizeContentView)
+                window.titlebarAppearsTransparent = true
+                window.titleVisibility = .hidden
+            }
+            window.backgroundColor = NSColor.windowBackgroundColor
             window.contentMinSize = contentSize
             window.contentMaxSize = contentSize
             window.standardWindowButton(.zoomButton)?.isEnabled = false
             window.collectionBehavior.remove(.fullScreenPrimary)
             window.collectionBehavior.insert(.fullScreenNone)
-            if window.contentLayoutRect.size != contentSize {
+            let current = window.contentView?.frame.size ?? .zero
+            if abs(current.width - contentSize.width) > 0.5
+                || abs(current.height - contentSize.height) > 0.5 {
                 window.setContentSize(contentSize)
             }
         }

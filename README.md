@@ -39,6 +39,20 @@ Debug Log 會印出呼叫網址、表單參數、HTTP 狀態、Cookie、Token、
 
 關閉最後一個視窗會直接結束 App。
 
+## 兩個版本
+
+| | Beanfun OTP | Beanfun OTP Legacy |
+| --- | --- | --- |
+| 系統需求 | macOS 13 以上 | macOS 10.12 以上（Intel） |
+| 架構 | Apple Silicon + Intel | 僅 Intel (x86_64) |
+| 功能 | 完整（含啟動遊戲、進階模式） | 精簡：QR 登入後複製 OTP |
+| 建置 | `./build.sh` | `./build-legacy.sh` |
+| 輸出 | `dist/Beanfun OTP.app` | `dist/Beanfun OTP Legacy.app` |
+
+10.12–12 請用 Legacy。13 以上請用一般版。Beanfun 登入協定若變更，兩個版本的 client 都需要同步更新。
+
+以下「一般模式」與「進階模式」說明僅適用於 **Beanfun OTP**（Modern 版）。
+
 ## 建置與測試
 
 建置機需要 Apple Command Line Tools；使用者執行已建好的 `.app` 不需要安裝其他東西。
@@ -46,9 +60,10 @@ Debug Log 會印出呼叫網址、表單參數、HTTP 狀態、Cookie、Token、
 ```sh
 cd BeanfunOTP
 ./test.sh
-./build.sh
+./build.sh          # Modern
+./build-legacy.sh   # Legacy
 ```
 
-輸出位於 `dist/Beanfun OTP.app`，支援 Apple Silicon、Intel Mac 與 macOS 13 以上。
+Modern 版輸出位於 `dist/Beanfun OTP.app`，支援 Apple Silicon、Intel Mac 與 macOS 13 以上。Legacy 版輸出位於 `dist/Beanfun OTP Legacy.app`，僅支援 Intel Mac 與 macOS 10.12 以上。
 
 這是非官方工具。Beanfun 若修改登入頁面、欄位或 OTP 協定，解析流程可能需要同步調整。

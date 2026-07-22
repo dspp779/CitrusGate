@@ -19,6 +19,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private var selectedGame: GameDefinition?
     private var accounts: [GameAccount] = []
     private var selectedAccountIndex: Int = -1
+    private var selectedAccount: GameAccount?
     private var otpValue: String = ""
 
     private var pollTimer: Timer?
@@ -32,6 +33,9 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private let tableView = NSTableView()
     private let imageView = NSImageView()
     private let qrStatusLabel = NSTextField(labelWithString: "")
+    private let accountCaptionLabel = NSTextField(labelWithString: "帳號")
+    private let accountField = NSTextField(labelWithString: "")
+    private let otpCaptionLabel = NSTextField(labelWithString: "OTP")
     private let otpField = NSTextField(labelWithString: "")
     private let primaryButton = NSButton(title: "下一步", target: nil, action: nil)
     private let secondaryButton = NSButton(title: "複製帳號", target: nil, action: nil)
@@ -85,6 +89,19 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         qrStatusLabel.font = NSFont.systemFont(ofSize: 12)
         qrStatusLabel.textColor = NSColor.disabledControlTextColor
 
+        for caption in [accountCaptionLabel, otpCaptionLabel] {
+            caption.alignment = .left
+            caption.font = NSFont.boldSystemFont(ofSize: 12)
+            caption.textColor = NSColor.disabledControlTextColor
+        }
+
+        accountField.alignment = .center
+        accountField.font = NSFont.systemFont(ofSize: 15)
+        accountField.isEditable = false
+        accountField.isSelectable = true
+        accountField.isBezeled = false
+        accountField.drawsBackground = false
+
         otpField.alignment = .center
         if let base = NSFont.userFixedPitchFont(ofSize: 36) {
             otpField.font = NSFontManager.shared.convert(base, toHaveTrait: .boldFontMask)
@@ -112,27 +129,33 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         buttonRow.distribution = .fillEqually
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
 
+        let otpBlock = NSStackView(views: [
+            accountCaptionLabel, accountField, otpCaptionLabel, otpField,
+        ])
+        otpBlock.orientation = .vertical
+        otpBlock.alignment = .leading
+        otpBlock.spacing = 4
+        otpBlock.setCustomSpacing(12, after: accountField)
+
         let root = NSStackView(views: [
-            statusLabel, scrollView, imageView, qrStatusLabel, otpField, buttonRow, backButton,
+            statusLabel, scrollView, imageView, qrStatusLabel, otpBlock, buttonRow, backButton,
         ])
         root.orientation = .vertical
         root.alignment = .centerX
         root.spacing = 14
-        root.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        root.edgeInsets = NSEdgeInsets(top: 20, left: 0, bottom: 20, right: 0)
         root.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(root)
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            root.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
+            root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
             root.topAnchor.constraint(equalTo: view.topAnchor),
             root.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor),
-            statusLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            statusLabel.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            otpField.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            otpField.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            otpBlock.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            otpBlock.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             buttonRow.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             buttonRow.trailingAnchor.constraint(equalTo: root.trailingAnchor),
         ])
@@ -144,11 +167,18 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         scrollView.isHidden = !(screen == .games || screen == .accounts)
         imageView.isHidden = screen != .qr
         qrStatusLabel.isHidden = screen != .qr
-        otpField.isHidden = screen != .otp
+        otpBlockVisibility(screen == .otp)
         if screen == .games || screen == .accounts {
             tableView.reloadData()
         }
         updateButtons()
+    }
+
+    private func otpBlockVisibility(_ visible: Bool) {
+        accountCaptionLabel.isHidden = !visible
+        accountField.isHidden = !visible
+        otpCaptionLabel.isHidden = !visible
+        otpField.isHidden = !visible
     }
 
     private func updateButtons() {
@@ -193,8 +223,10 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         stopTimers()
         loginCompletionInFlight = false
         accounts = []
+        selectedAccount = nil
         clearTableSelection()
         otpValue = ""
+        accountField.stringValue = ""
         otpField.stringValue = ""
         imageView.image = nil
         qrStatusLabel.stringValue = ""
@@ -237,8 +269,8 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     }
 
     @objc private func handleSecondary() {
-        guard screen == .otp, accounts.indices.contains(selectedAccountIndex) else { return }
-        copyToPasteboard(accounts[selectedAccountIndex].displayName)
+        guard screen == .otp, let account = selectedAccount else { return }
+        copyToPasteboard(account.id)
     }
 
     @objc private func handleBack() {
@@ -382,9 +414,11 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             self.primaryButton.isEnabled = true
             switch result {
             case let .success(otp):
+                self.selectedAccount = account
                 self.otpValue = otp.value
+                self.accountField.stringValue = "\(account.displayName)（\(account.id)）"
                 self.otpField.stringValue = otp.value
-                self.statusLabel.stringValue = "\(account.displayName)的 OTP"
+                self.statusLabel.stringValue = "\(account.displayName) 登入資訊"
                 self.screen = .otp
             case let .failure(error):
                 self.showError(error)

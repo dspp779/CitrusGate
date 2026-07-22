@@ -1,6 +1,6 @@
 # 在 macOS 玩台灣楓之谷（玩家教學）
 
-最後更新：2026-07-21
+最後更新：2026-07-22
 
 本教學依實際可玩流程整理，目標是讓一般玩家能在 Apple Silicon／Intel Mac 上安裝並啟動**台灣版**楓之谷。這不是官方支援路徑，遊戲與登入服務隨時可能變更。
 
@@ -10,7 +10,7 @@
 | --- | --- |
 | 美版 [MapleStory Launcher](https://www.nexon.com/maplestory/) | 提供 Nexon／CodeWeavers 客製的 Wine（CrossOver OEM）與 bottle |
 | [gamania Games Manager](https://tw.beanfun.com/ggm/index.html) | 下載／安裝台版楓之谷；安裝過程可能要求 .NET 6 |
-| [CitrusGate](https://github.com/dspp779/CitrusGate) | 取得 Beanfun 帳號 ID 與 OTP，並組出完整啟動指令 |
+| [CitrusGate v0.1.0](https://github.com/dspp779/CitrusGate/releases/tag/v0.1.0) | 取得 Beanfun 帳號 ID 與 OTP，並組出完整啟動指令 |
 | Beanfun 帳號 | 台版登入憑證來源 |
 
 研究細節（OEM engine、Cyder、防作弊 lifecycle）見同目錄其他文件；一般遊玩不必閱讀。
@@ -19,8 +19,8 @@
 
 1. **安裝路徑請選好找的地方**  
    管理器與遊戲若裝進 bottle 的 `Program Files`，之後很難在 Finder 找到。建議都裝到 macOS「文件」底下，例如：
-   - 管理器：`~/Documents/ogs/ggm`
-   - 遊戲：`~/Documents/ogs/gamania Games/MapleStory`  
+   - 管理器：`~/Documents/ggm`
+   - 遊戲：`~/Documents/gamania Games/MapleStory`  
    Wine 的「我的文件」通常對應你的 macOS `Documents`，選 Documents／文件即可。
 
 2. **啟動參數必須是帳號 ID + OTP**  
@@ -40,13 +40,7 @@
 
 ## 步驟 0：準備目錄（建議）
 
-在「終端機」執行：
-
-```sh
-mkdir -p "$HOME/Documents/ogs"
-```
-
-之後安裝管理器與遊戲時，儘量指向這個目錄底下。
+安裝管理器與遊戲時，請一律指向 macOS「文件」目錄 `$HOME/Documents`（Wine 內通常對應 `C:\users\crossover\Documents`）。此目錄預設已存在，無須額外建立子資料夾。
 
 ---
 
@@ -98,8 +92,8 @@ wine --bottle maplestory \
 
 安裝精靈注意：
 
-- 安裝路徑請改成例如：`C:\users\crossover\Documents\ogs\ggm`  
-  （對應 macOS：`~/Documents/ogs/ggm`）
+- 安裝路徑請改成例如：`C:\users\crossover\Documents\ggm`  
+  （對應 macOS：`~/Documents/ggm`）
 - 過程中若提示安裝 **.NET Desktop Runtime / .NET Framework 6**，請接受並完成安裝。
 - 安裝完成後，管理器主程式通常是 `GGMWebStart.exe`。
 
@@ -113,8 +107,8 @@ export LC_ALL=zh_TW.UTF-8
 export LC_CTYPE=zh_TW.UTF-8
 
 wine --bottle maplestory \
-  --workdir "$HOME/Documents/ogs/ggm" \
-  "$HOME/Documents/ogs/ggm/GGMWebStart.exe"
+  --workdir "$HOME/Documents/ggm" \
+  "$HOME/Documents/ggm/GGMWebStart.exe"
 ```
 
 若你的實際路徑不同，把上面的 `ggm` 路徑改成你安裝時選的位置。
@@ -125,11 +119,15 @@ wine --bottle maplestory \
 
 1. 在遊戲管理器中登入 Beanfun／選擇楓之谷。
 2. 下載並安裝時，**同樣把遊戲目錄設到文件底下**，例如：  
-   `C:\users\crossover\Documents\ogs\gamania Games\MapleStory`
-3. 等到下載／更新完成，確認存在：
+   `C:\users\crossover\Documents\gamania Games\MapleStory`
+3. 在遊戲頁面按「設定」，把安裝位置從預設的 `Program Files` 改到上述路徑：
+
+![在管理器設定遊戲安裝位置](screenshots/ggm-select-install-path.png)
+
+4. 等到下載／更新完成，確認存在：
 
 ```sh
-ls "$HOME/Documents/ogs/gamania Games/MapleStory/MapleStory.exe"
+ls "$HOME/Documents/gamania Games/MapleStory/MapleStory.exe"
 ```
 
 路徑可依你實際安裝位置調整。重點是你要能在 Finder 或終端機輕易找到 `MapleStory.exe`。
@@ -140,15 +138,36 @@ ls "$HOME/Documents/ogs/gamania Games/MapleStory/MapleStory.exe"
 
 台版不能只雙擊 `MapleStory.exe`；必須附上 Beanfun 的帳號 ID 與 OTP。
 
-1. 開啟 [CitrusGate Releases](https://github.com/dspp779/CitrusGate/releases)，下載最新 macOS 可執行檔／App。
+1. 到 [CitrusGate v0.1.0 Release](https://github.com/dspp779/CitrusGate/releases/tag/v0.1.0) 下載 macOS 可執行檔／App。
 2. 若系統提示「無法驗證開發者」，到「系統設定 → 隱私權與安全性」允許開啟，或對 App 按右鍵 → 打開。
-3. 依 CitrusGate 介面：
-   - 登入 Beanfun；
-   - 選擇要進入的遊戲帳號（使用 **ServiceAccountID / T9...**，不是顯示名稱）；
-   - 指定台版 `MapleStory.exe` 路徑（例如上面的 Documents 路徑）；
-   - 取得 OTP 並啟動。
+3. 依 CitrusGate 介面操作：
 
-CitrusGate 會幫你組出完整啟動參數並呼叫遊戲。若工具尚無 Release 或介面有變，請改用下方手動指令。
+   **選擇遊戲** — 點「新楓之谷」：
+
+   ![選擇遊戲](screenshots/citrusgate-1-home.png)
+
+   **登入 Beanfun** — 用 Gama Play App 掃描 QR Code：
+
+   ![QR Code 登入](screenshots/citrusgate-2-qrcode.png)
+
+   **選擇帳號並啟動** — 選要進入的遊戲帳號，按「開啟遊戲」：
+
+   ![選擇帳號](screenshots/citrusgate-3-service-account.png)
+
+   一般模式下，CitrusGate 會自動組出完整啟動參數並呼叫遊戲。
+
+4. **進階模式**（可選）— 若需要手動複製 Wine 指令，切換至進階模式後：
+   - 選擇帳號，按「取得 OTP」：
+
+   ![進階模式：選擇帳號](screenshots/citrusgate-4-advanced-service-account.png)
+
+   - 切換至「Nexon Launcher Wine」分頁，複製啟動指令到終端機執行：
+
+   ![進階模式：Wine 啟動指令](screenshots/citrusgate-5-advanced-wine-cmd.png)
+
+   進階模式會顯示 `ServiceAccountID`（`T9...`）與 OTP，並產生對齊本教學的 Wine 命令列。
+
+若工具介面有變，請改用下方手動指令。
 
 ---
 
@@ -169,7 +188,7 @@ export LANG=zh_TW.UTF-8
 export LC_ALL=zh_TW.UTF-8
 export LC_CTYPE=zh_TW.UTF-8
 
-GAME_DIR="$HOME/Documents/ogs/gamania Games/MapleStory"
+GAME_DIR="$HOME/Documents/gamania Games/MapleStory"
 ACCOUNT_ID='T9你的帳號ID'
 OTP='一次性OTP'
 
@@ -216,16 +235,16 @@ Bottle
   ~/Library/Application Support/MapleStoryNA/Bottles/maplestory
 
 建議：遊戲管理器
-  ~/Documents/ogs/ggm/GGMWebStart.exe
+  ~/Documents/ggm/GGMWebStart.exe
 
 建議：台版楓之谷
-  ~/Documents/ogs/gamania Games/MapleStory/MapleStory.exe
+  ~/Documents/gamania Games/MapleStory/MapleStory.exe
 ```
 
 ---
 
 ## 免責
 
-- 本流程使用第三方 Wine 環境執行 Windows 版客戶端，可能違反遊戲服務條款，也有帳號風險。
+- 本流程使用 Nexon 官方的 Wine 環境（美版 MapleStory Launcher 內建）執行 Windows 版客戶端，可能違反遊戲服務條款，也有帳號風險。
 - Nexon、遊戲橘子、Beanfun 皆未為此 macOS 玩法提供官方支援。
 - OTP、Cookie、帳號 ID 屬敏感資料，請勿貼到公開頻道或提交到任何版本庫。

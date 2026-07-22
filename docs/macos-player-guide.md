@@ -122,7 +122,7 @@ wine --bottle maplestory \
    `C:\users\crossover\Documents\gamania Games\MapleStory`
 3. 在遊戲頁面按「設定」，把安裝位置從預設的 `Program Files` 改到上述路徑：
 
-![在管理器設定遊戲安裝位置](screenshots/ggm-select-install-path.png)
+<img src="screenshots/ggm-select-install-path.png" alt="在管理器設定遊戲安裝位置" width="480">
 
 4. 等到下載／更新完成，確認存在：
 
@@ -144,26 +144,26 @@ ls "$HOME/Documents/gamania Games/MapleStory/MapleStory.exe"
 
    **選擇遊戲** — 點「新楓之谷」：
 
-   ![選擇遊戲](screenshots/citrusgate-1-home.png)
+   <img src="screenshots/citrusgate-1-home.png" alt="選擇遊戲" width="480">
 
    **登入 Beanfun** — 用 Gama Play App 掃描 QR Code：
 
-   ![QR Code 登入](screenshots/citrusgate-2-qrcode.png)
+   <img src="screenshots/citrusgate-2-qrcode.png" alt="QR Code 登入" width="480">
 
    **選擇帳號並啟動** — 選要進入的遊戲帳號，按「開啟遊戲」：
 
-   ![選擇帳號](screenshots/citrusgate-3-service-account.png)
+   <img src="screenshots/citrusgate-3-service-account.png" alt="選擇帳號" width="480">
 
    一般模式下，CitrusGate 會自動組出完整啟動參數並呼叫遊戲。
 
 4. **進階模式**（可選）— 若需要手動複製 Wine 指令，切換至進階模式後：
    - 選擇帳號，按「取得 OTP」：
 
-   ![進階模式：選擇帳號](screenshots/citrusgate-4-advanced-service-account.png)
+   <img src="screenshots/citrusgate-4-advanced-service-account.png" alt="進階模式：選擇帳號" width="480">
 
    - 切換至「Nexon Launcher Wine」分頁，複製啟動指令到終端機執行：
 
-   ![進階模式：Wine 啟動指令](screenshots/citrusgate-5-advanced-wine-cmd.png)
+   <img src="screenshots/citrusgate-5-advanced-wine-cmd.png" alt="進階模式：Wine 啟動指令" width="480">
 
    進階模式會顯示 `ServiceAccountID`（`T9...`）與 OTP，並產生對齊本教學的 Wine 命令列。
 

@@ -11,17 +11,19 @@ App 內顯示名稱為「楓之谷：經典版」。新楓之谷（非經典）�
 | 項目 | 用途 |
 | --- | --- |
 | Beanfun OTP（本專案 Modern 版，macOS 13+） | 選擇經典版主程式、開啟網頁登入、接收 `NexonPlug://` 並啟動 |
-| Cyder（或系統預設可開 `.exe` 的相容層） | 以 `open -n … --args …` 開啟 `Maplestory_Classic.exe` |
+| [Cyder](https://github.com/dspp779/CyderBits/releases/latest) | 以 `open -n … --args …` 開啟 `Maplestory_Classic.exe` |
 | 經典版主程式 `Maplestory_Classic.exe` | 遊戲客戶端 |
 | Beanfun 帳號 | 在官方網頁登入 |
+
+Cyder 下載：<https://github.com/dspp779/CyderBits/releases/latest>
 
 ## 為什麼不用北美官方 MapleStory Launcher？
 
 北美官方 **MapleStory Launcher** 內建的是 **CrossOver 25（Wine 10）** OEM 環境，**缺少部分功能**（例如 `EventWriteEx`），經典版（Unity IL2CPP）會載入失敗。
 
-請使用 **Cyder**（或同等已補齊相關功能的 Wine）搭配 `open -n`。
+請使用 **Cyder**（正式版）搭配 `open -n`。
 
-反過來說：新楓之谷（非經典）目前請用 Launcher Wine；**Cyder 還不能跑新楓之谷**（官方修補移植仍在進行中）。見 [`docs/macos-player-guide.md`](macos-player-guide.md)。
+新楓之谷（非經典）則可選北美 Launcher，或可選 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)（不想裝 GMS Launcher 時）。**Cyder 正式版不能跑新楓之谷。** 見 [`docs/macos-player-guide.md`](macos-player-guide.md)。
 
 ---
 
@@ -35,7 +37,7 @@ App 內顯示名稱為「楓之谷：經典版」。新楓之谷（非經典）�
 
 ## 步驟 1：準備環境
 
-1. 安裝並設定好 **Cyder**（或可正確開啟 Windows `.exe` 的相容層）。
+1. 下載並安裝 **Cyder**：<https://github.com/dspp779/CyderBits/releases/latest>
 2. 取得 `Maplestory_Classic.exe`，放到好找的路徑（例如文件下自訂資料夾）。
 3. 建議在 Finder 對該 `.exe` 按「取得資訊」→「打開方式」選 **Cyder**。
 4. 準備 **Beanfun OTP**（Modern，macOS 13+；見專案 `README.md`／Release）。
@@ -107,7 +109,7 @@ App 內顯示名稱為「楓之谷：經典版」。新楓之谷（非經典）�
 
 ## 免責
 
-- 本流程使用第三方相容層（如 Cyder）執行 Windows 版客戶端，可能違反遊戲服務條款，也有帳號風險。
+- 本流程使用 [Cyder](https://github.com/dspp779/CyderBits/releases/latest) 等相容層執行 Windows 版客戶端，可能違反遊戲服務條款，也有帳號風險。
 - 北美官方 MapleStory Launcher（CrossOver 25／Wine 10）**不能**用來開經典版（缺 `EventWriteEx` 等）。
 - Nexon、遊戲橘子、Beanfun 皆未為此 macOS 玩法提供官方支援。
 - `NexonPlug` 參數與登入相關資料屬敏感資訊，請勿貼到公開頻道或提交到任何版本庫。

@@ -40,6 +40,11 @@ enum BeanfunAccountFlow: String, Hashable {
     case accountsManagement
 }
 
+enum GameAuthFlow: String, Hashable {
+    case beanfunQR
+    case webNexonPlug
+}
+
 struct GameDefinition: Identifiable, Hashable {
     let id: String
     let name: String
@@ -49,10 +54,22 @@ struct GameDefinition: Identifiable, Hashable {
     let executableName: String
     let launchStyle: GameLaunchStyle
     let accountFlow: BeanfunAccountFlow
+    let authFlow: GameAuthFlow
 
     var serviceKey: String { "\(serviceCode)_\(serviceRegion)" }
 
     var supportsAutomaticLogin: Bool { launchStyle != .manual }
+
+    var loginURL: URL? {
+        switch authFlow {
+        case .beanfunQR:
+            return nil
+        case .webNexonPlug:
+            return URL(string: "https://maplestoryclassic.beanfun.com/Main")
+        }
+    }
+
+    var usesBeanfunQR: Bool { authFlow == .beanfunQR }
 
     func gameArguments(accountID: String, otp: String) -> [String] {
         switch launchStyle {
@@ -86,11 +103,25 @@ struct GameDefinition: Identifiable, Hashable {
         imageName: "maplestory.jpg",
         executableName: "MapleStory.exe",
         launchStyle: .mapleStory,
-        accountFlow: .gameZone
+        accountFlow: .gameZone,
+        authFlow: .beanfunQR
+    )
+
+    static let mapleStoryClassic = GameDefinition(
+        id: "maplestory-classic",
+        name: "楓之谷：經典版",
+        serviceCode: "2982",
+        serviceRegion: "CL",
+        imageName: "maplestory-classic.jpg",
+        executableName: "Maplestory_Classic.exe",
+        launchStyle: .manual,
+        accountFlow: .gameZone,
+        authFlow: .webNexonPlug
     )
 
     static let all: [GameDefinition] = [
         mapleStory,
+        mapleStoryClassic,
         GameDefinition(
             id: "lineage-international",
             name: "天堂國際服",
@@ -99,7 +130,8 @@ struct GameDefinition: Identifiable, Hashable {
             imageName: "lineage-international.jpg",
             executableName: "Lineage.exe",
             launchStyle: .manual,
-            accountFlow: .gameZone
+            accountFlow: .gameZone,
+            authFlow: .beanfunQR
         ),
         GameDefinition(
             id: "lineage",
@@ -109,7 +141,8 @@ struct GameDefinition: Identifiable, Hashable {
             imageName: "lineage.jpg",
             executableName: "Lineage.exe",
             launchStyle: .manual,
-            accountFlow: .gameZone
+            accountFlow: .gameZone,
+            authFlow: .beanfunQR
         ),
         GameDefinition(
             id: "lineage-health",
@@ -119,7 +152,8 @@ struct GameDefinition: Identifiable, Hashable {
             imageName: "lineage.jpg",
             executableName: "Lineage.exe",
             launchStyle: .manual,
-            accountFlow: .gameZone
+            accountFlow: .gameZone,
+            authFlow: .beanfunQR
         ),
         GameDefinition(
             id: "lineage-free",
@@ -129,7 +163,8 @@ struct GameDefinition: Identifiable, Hashable {
             imageName: "lineage.jpg",
             executableName: "Lineage.exe",
             launchStyle: .manual,
-            accountFlow: .gameZone
+            accountFlow: .gameZone,
+            authFlow: .beanfunQR
         ),
         GameDefinition(
             id: "mabinogi",
@@ -139,7 +174,8 @@ struct GameDefinition: Identifiable, Hashable {
             imageName: "mabinogi.jpg",
             executableName: "mabinogi.exe",
             launchStyle: .mabinogi,
-            accountFlow: .gameZone
+            accountFlow: .gameZone,
+            authFlow: .beanfunQR
         ),
         GameDefinition(
             id: "elsword",
@@ -149,7 +185,8 @@ struct GameDefinition: Identifiable, Hashable {
             imageName: "elsword.jpg",
             executableName: "elsword.exe",
             launchStyle: .elsword,
-            accountFlow: .gameZone
+            accountFlow: .gameZone,
+            authFlow: .beanfunQR
         ),
         GameDefinition(
             id: "dragon-nest",
@@ -159,7 +196,8 @@ struct GameDefinition: Identifiable, Hashable {
             imageName: "dragon-nest.jpg",
             executableName: "DragonNest.exe",
             launchStyle: .manual,
-            accountFlow: .gameZone
+            accountFlow: .gameZone,
+            authFlow: .beanfunQR
         ),
         GameDefinition(
             id: "cso",
@@ -169,7 +207,8 @@ struct GameDefinition: Identifiable, Hashable {
             imageName: "cso.jpg",
             executableName: "cstrike-online.exe",
             launchStyle: .manual,
-            accountFlow: .accountsManagement
+            accountFlow: .accountsManagement,
+            authFlow: .beanfunQR
         ),
     ]
 }
@@ -312,6 +351,7 @@ enum AppScreen: Equatable {
     case qr
     case accounts
     case otp
+    case classic
 }
 
 enum BeanfunError: LocalizedError {

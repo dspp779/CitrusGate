@@ -377,7 +377,7 @@ struct ContentView: View {
                         .font(.title2.bold())
                 }
 
-                if model.isBusy {
+                if model.isBusy && model.launchUIPhase == .idle {
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.small)
                         Text(model.statusMessage)
@@ -424,8 +424,9 @@ struct ContentView: View {
                                     .foregroundStyle(model.launchUIPhase == .launched ? .green : .secondary)
                             }
                             .font(.headline)
-                        } else if model.selectedGame?.supportsAutomaticLogin == false,
-                                  model.launchedAccountID == account.id {
+                        }
+                        if model.selectedGame?.supportsAutomaticLogin == false,
+                           model.launchedAccountID == account.id {
                             HStack {
                                 Button("複製帳號") { model.copyAccountID() }
                                 Button("複製 OTP") { model.copyOTP() }

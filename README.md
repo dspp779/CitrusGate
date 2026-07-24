@@ -32,11 +32,11 @@ App 每次啟動預設使用一般模式。先從附有官方縮圖的精簡清�
 - **MapleStory Launcher**（內建 CrossOver 25／Wine 10，`maplestory` bottle）
 - 或不想裝 GMS Launcher 時，改用 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)（`v0.6.0-maplestory`）+「以 Cyder 開啟」
 
-[Cyder 一般釋出](https://github.com/dspp779/CyderBits/releases/latest) **不能**跑新楓之谷。啟動後按鈕會暫時停用約 10 秒並顯示狀態。
+[Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) **不能**跑新楓之谷。啟動後按鈕會暫時停用約 10 秒並顯示狀態。
 
 一般模式使用精簡的固定大小視窗，QR 畫面只保留 QR Code、掃描說明、剩餘時間與重新產生按鈕。QR 區域以一致的 `12pt` 四邊白色留白延伸至視窗上、左、右邊緣。視窗不可縮放或進入全螢幕；系統選單不顯示「編輯」、「顯示方式」與「視窗」。
 
-另支援**楓之谷：經典版**（教學稱新楓之谷：經典版）：無 QR。選擇 `Maplestory_Classic.exe` 後開啟官方登入網頁；網頁透過 `NexonPlug://` 回傳參數，App 以 `open -n … --args` 啟動（預設走 [Cyder 一般釋出](https://github.com/dspp779/CyderBits/releases/latest)）。**請勿用北美 MapleStory Launcher 開經典版**（CrossOver 25／Wine 10 缺 `EventWriteEx` 等）。請在經典版畫面將 `NexonPlug` 設為由 Beanfun OTP 處理；其他 gameCode 會轉發官方 NexonPlug.app。測完可改回 `com.nexon.plug`。Beanfun OTP 僅允許單一實例；若由網頁 `NexonPlug://` 冷啟動並成功開啟經典版，啟動完成後會自動結束。完整步驟見 [`docs/macos-player-guide-classic.md`](docs/macos-player-guide-classic.md)。
+另支援**楓之谷：經典版**（教學稱新楓之谷：經典版）：無 QR。選擇 `Maplestory_Classic.exe` 後開啟官方登入網頁；網頁透過 `NexonPlug://` 回傳參數，App 以 `open -n … --args` 啟動（預設走 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest)）。**請勿用北美 MapleStory Launcher 或 Cyder 新楓之谷分支開經典版**（皆為 oem25／CrossOver 25，缺 `EventWriteEx` 等）。請在經典版畫面將 `NexonPlug` 設為由 Beanfun OTP 處理；其他 gameCode 會轉發官方 NexonPlug.app。測完可改回 `com.nexon.plug`。Beanfun OTP 僅允許單一實例；若由網頁 `NexonPlug://` 冷啟動並成功開啟經典版，啟動完成後會自動結束。完整步驟見 [`docs/macos-player-guide-classic.md`](docs/macos-player-guide-classic.md)。
 
 ## 進階模式
 

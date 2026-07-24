@@ -4,8 +4,19 @@ import CoreServices
 import Foundation
 import UniformTypeIdentifiers
 
+enum LaunchUIPhase: Equatable {
+    case idle
+    case launching
+    case launched
+}
+
 @MainActor
 final class AppModel: ObservableObject {
+    private enum PendingLaunchKind {
+        case cyder
+        case mapleStoryWine
+    }
+
     private static let legacyMapleStoryPathKey = "MapleStoryExecutablePath"
     private static let executablePathPrefix = "ExecutablePath."
     private static let advancedLaunchCommandStyleKey = "AdvancedLaunchCommandStyle"
@@ -31,6 +42,8 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var logText = ""
     @Published private(set) var launchedAccountID: String?
+    @Published private(set) var launchUIPhase: LaunchUIPhase = .idle
+    @Published private(set) var launchStatusText = ""
     @Published var executablePath: String {
         didSet {
             guard let selectedGame else { return }
@@ -54,6 +67,9 @@ final class AppModel: ObservableObject {
     private var loginTask: Task<Void, Never>?
     private var otpTask: Task<Void, Never>?
     private var otpCountdownTask: Task<Void, Never>?
+    private var launchCooldownTask: Task<Void, Never>?
+    private static let launchCooldownNanoseconds: UInt64 = 10_000_000_000
+    private var pendingLaunchKind: PendingLaunchKind = .cyder
     private lazy var client = BeanfunClient { [weak self] message in
         self?.appendLog(message)
     }
@@ -88,6 +104,10 @@ final class AppModel: ObservableObject {
     }
 
     var canCopyLaunchCommand: Bool { fullLaunchCommand != nil }
+
+    var areLaunchButtonsDisabled: Bool {
+        launchUIPhase != .idle || isBusy
+    }
 
     var fullLaunchCommand: String? {
         guard let game = selectedGame else { return nil }
@@ -228,6 +248,7 @@ final class AppModel: ObservableObject {
                         isBusy = false
                         if mode == .standard, loadedAccounts.count == 1 {
                             statusMessage = "登入成功，正在以 \(loadedAccounts[0].displayName) 開啟遊戲…"
+                            pendingLaunchKind = .cyder
                             launchSelectedAccount()
                         } else {
                             statusMessage = "登入成功，請選擇\(game.name)帳號"
@@ -288,7 +309,12 @@ final class AppModel: ObservableObject {
                 isBusy = false
                 if launchWhenReady {
                     statusMessage = "OTP 已取得，正在以 \(account.displayName) 開啟遊戲…"
-                    launchGame()
+                    switch pendingLaunchKind {
+                    case .cyder:
+                        launchViaCyder()
+                    case .mapleStoryWine:
+                        launchViaMapleStoryLauncherWine()
+                    }
                 } else {
                     screen = .otp
                     statusMessage = "OTP 已更新"
@@ -368,7 +394,22 @@ final class AppModel: ObservableObject {
         statusMessage = "已記住\(game.name)主程式位置"
     }
 
+    /// Deprecated alias kept for the advanced-mode launch button.
     func launchGame() {
+        launchViaCyder()
+    }
+
+    func launchSelectedAccountViaCyder() {
+        pendingLaunchKind = .cyder
+        launchSelectedAccount()
+    }
+
+    func launchSelectedAccountViaWine() {
+        pendingLaunchKind = .mapleStoryWine
+        launchSelectedAccount()
+    }
+
+    func launchViaCyder() {
         guard let game = selectedGame else {
             errorMessage = "請先選擇遊戲"
             return
@@ -395,6 +436,7 @@ final class AppModel: ObservableObject {
         }
 
         launchedAccountID = nil
+        beginLaunchUI()
 
         let process = Process()
         let standardError = Pipe()
@@ -421,9 +463,11 @@ final class AppModel: ObservableObject {
                         self.statusMessage = "已啟動\(game.name)，OTP 已複製"
                     }
                     self.appendLog("執行 open -n：game=\(game.serviceKey)，executable=\(path)，account=\(account.id)")
+                    self.markLaunchSucceeded()
                 } else {
                     let message = errorText.flatMap { $0.isEmpty ? nil : $0 }
                         ?? "open 結束代碼 \(process.terminationStatus)"
+                    self.markLaunchFailed()
                     self.present(BeanfunError.rejected(
                         message
                     ))
@@ -437,8 +481,93 @@ final class AppModel: ObservableObject {
             try process.run()
         } catch {
             isBusy = false
+            markLaunchFailed()
             present(error)
         }
+    }
+
+    func launchViaMapleStoryLauncherWine() {
+        guard let game = selectedGame, game.id == GameDefinition.mapleStory.id else {
+            errorMessage = "MapleStory Launcher 啟動僅支援新楓之谷"
+            return
+        }
+        let path = normalizedExecutablePath
+        guard !path.isEmpty else {
+            errorMessage = "請先選擇 \(game.executableName)"
+            return
+        }
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            errorMessage = "找不到\(game.name)主程式：\(path)"
+            return
+        }
+        guard URL(fileURLWithPath: path).pathExtension.lowercased() == "exe" else {
+            errorMessage = "請選擇副檔名為 .exe 的檔案"
+            return
+        }
+        guard let account = selectedAccount, let otp else {
+            errorMessage = "請先選擇帳號並取得 OTP"
+            return
+        }
+        let wineURL = MapleStoryWineLauncher.wineExecutableURL()
+        guard FileManager.default.isExecutableFile(atPath: wineURL.path) else {
+            errorMessage = "找不到 MapleStory Launcher 的 Wine。請先安裝並開啟過 MapleStory Launcher。"
+            return
+        }
+
+        beginLaunchUI()
+        launchedAccountID = nil
+        isBusy = true
+        statusMessage = "正在以 MapleStory Launcher Wine 啟動\(game.name)…"
+
+        let process = Process()
+        process.executableURL = wineURL
+        process.arguments = MapleStoryWineLauncher.arguments(
+            executablePath: path,
+            accountID: account.id,
+            otp: otp.value
+        )
+        process.environment = MapleStoryWineLauncher.processEnvironment()
+
+        do {
+            try process.run()
+            // Do not wait for wine exit; the launcher stays running independently.
+            isBusy = false
+            launchedAccountID = account.id
+            statusMessage = "已透過 MapleStory Launcher 啟動\(game.name)"
+            appendLog("執行 wine：executable=\(path) account=\(account.id)")
+            markLaunchSucceeded()
+        } catch {
+            isBusy = false
+            markLaunchFailed()
+            present(error)
+        }
+    }
+
+    private func beginLaunchUI() {
+        launchCooldownTask?.cancel()
+        launchUIPhase = .launching
+        launchStatusText = "啟動中…"
+    }
+
+    private func markLaunchSucceeded() {
+        launchUIPhase = .launched
+        launchStatusText = "已啟動"
+        launchCooldownTask?.cancel()
+        launchCooldownTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.launchCooldownNanoseconds)
+            guard let self, !Task.isCancelled else { return }
+            self.launchUIPhase = .idle
+            self.launchStatusText = ""
+        }
+    }
+
+    private func markLaunchFailed() {
+        launchCooldownTask?.cancel()
+        launchUIPhase = .idle
+        launchStatusText = ""
     }
 
     func chooseAnotherAccount() {
@@ -606,6 +735,15 @@ final class AppModel: ObservableObject {
         qrImage = nil
         qrSecondsRemaining = 60
         isBusy = false
+        resetLaunchUI()
+    }
+
+    private func resetLaunchUI() {
+        launchCooldownTask?.cancel()
+        launchCooldownTask = nil
+        launchUIPhase = .idle
+        launchStatusText = ""
+        pendingLaunchKind = .cyder
     }
 
     func clearError() {

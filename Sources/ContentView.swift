@@ -72,7 +72,7 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if model.screen != .welcome, model.screen != .games {
+            if model.screen != .welcome, model.screen != .games, model.screen != .classic {
                 Button("重新登入") { model.startLogin() }
                     .disabled(model.isBusy)
             }
@@ -94,7 +94,7 @@ struct ContentView: View {
         case .accounts, .otp:
             standardAccountView
         case .classic:
-            classicPlaceholderView
+            classicView
         }
     }
 
@@ -221,21 +221,47 @@ struct ContentView: View {
         case .otp:
             otpView
         case .classic:
-            classicPlaceholderView
+            classicView
         }
     }
 
-    // Minimal placeholder; full Classic UI (login page / handler buttons) lands in a follow-up task.
-    private var classicPlaceholderView: some View {
-        VStack(spacing: 12) {
+    private var classicView: some View {
+        VStack(spacing: 14) {
             if let game = model.selectedGame {
+                GameArtwork(game: game)
+                    .frame(width: 132, height: 88)
                 Text(game.name)
                     .font(.title2.bold())
             }
-            Text(model.statusMessage)
+            Text("此遊戲使用網頁登入。登入後網站會開啟 NexonPlug://，由 Beanfun OTP 啟動遊戲。")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            Text(model.executablePath.isEmpty ? "尚未選擇 Maplestory_Classic.exe" : model.executablePath)
+                .font(.caption)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+            Button("選擇主程式…") { model.chooseExecutable() }
+            Button {
+                model.openClassicLoginPage()
+            } label: {
+                Label("開啟登入網頁", systemImage: "safari")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(model.isBusy)
+            Button("將 NexonPlug 設為由 Beanfun OTP 處理") {
+                model.claimNexonPlugHandler()
+            }
+            .buttonStyle(.link)
+            if model.mode == .standard {
+                Text(model.statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            Button("選擇其他遊戲") { model.showGamePicker() }
+                .buttonStyle(.link)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

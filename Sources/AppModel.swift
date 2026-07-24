@@ -64,6 +64,8 @@ final class AppModel: ObservableObject {
     private var lastHandledURLString: String?
     private var lastHandledURLDate: Date?
     private static let duplicateURLWindow: TimeInterval = 2
+    /// Set when a NexonPlug URL arrives during cold-start; cleared only by process exit.
+    private(set) var quitAfterSuccessfulClassicLaunch = false
     private var loginTask: Task<Void, Never>?
     private var otpTask: Task<Void, Never>?
     private var otpCountdownTask: Task<Void, Never>?
@@ -590,7 +592,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func handleOpenedURL(_ url: URL) {
+    func handleOpenedURL(_ url: URL, fromColdStart: Bool = false) {
+        if fromColdStart {
+            quitAfterSuccessfulClassicLaunch = true
+        }
         let urlString = url.absoluteString
         let now = Date()
         if urlString == lastHandledURLString,
@@ -667,6 +672,9 @@ final class AppModel: ObservableObject {
                 if process.terminationStatus == 0 {
                     self.statusMessage = "已透過 Cyder 啟動楓之谷：經典版"
                     self.appendLog("執行 open -n：classic executable=\(path) args=\(passargTokens.joined(separator: " "))")
+                    if self.quitAfterSuccessfulClassicLaunch {
+                        NSApp.terminate(nil)
+                    }
                 } else {
                     let message = errorText.flatMap { $0.isEmpty ? nil : $0 }
                         ?? "open 結束代碼 \(process.terminationStatus)"

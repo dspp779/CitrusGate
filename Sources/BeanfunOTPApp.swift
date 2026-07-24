@@ -61,11 +61,14 @@ struct BeanfunOTPApp: App {
         Window("Beanfun OTP", id: "main") {
             ContentView(model: model)
                 .onAppear {
-                    appDelegate.onOpenURLs = { urls in
-                        urls.forEach { model.handleOpenedURL($0) }
+                    appDelegate.onOpenURLs = { [appDelegate] urls in
+                        let cold = appDelegate.isWithinColdStartURLWindow
+                        urls.forEach { model.handleOpenedURL($0, fromColdStart: cold) }
                     }
                 }
-                .onOpenURL { model.handleOpenedURL($0) }
+                .onOpenURL { url in
+                    model.handleOpenedURL(url, fromColdStart: appDelegate.isWithinColdStartURLWindow)
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 400, height: 440)

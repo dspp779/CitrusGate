@@ -31,7 +31,7 @@ App 每次啟動預設使用一般模式。先從附有官方縮圖的精簡清�
 
 一般模式使用精簡的固定大小視窗，QR 畫面只保留 QR Code、掃描說明、剩餘時間與重新產生按鈕。QR 區域以一致的 `12pt` 四邊白色留白延伸至視窗上、左、右邊緣。視窗不可縮放或進入全螢幕；系統選單不顯示「編輯」、「顯示方式」與「視窗」。
 
-另支援**楓之谷：經典版**：無 QR。選擇 `Maplestory_Classic.exe` 後開啟官方登入網頁；網頁透過 `NexonPlug://` 回傳參數，App 以 `open -n … --args` 啟動（預設走 Cyder）。請在經典版畫面將 `NexonPlug` 設為由 Beanfun OTP 處理；其他 gameCode 會轉發官方 NexonPlug.app。測完可改回 `com.nexon.plug`。
+另支援**楓之谷：經典版**：無 QR。選擇 `Maplestory_Classic.exe` 後開啟官方登入網頁；網頁透過 `NexonPlug://` 回傳參數，App 以 `open -n … --args` 啟動（預設走 Cyder）。請在經典版畫面將 `NexonPlug` 設為由 Beanfun OTP 處理；其他 gameCode 會轉發官方 NexonPlug.app。測完可改回 `com.nexon.plug`。Beanfun OTP 僅允許單一實例；若由網頁 `NexonPlug://` 冷啟動並成功開啟經典版，啟動完成後會自動結束。
 
 ## 進階模式
 

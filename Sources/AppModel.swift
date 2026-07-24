@@ -45,6 +45,12 @@ final class AppModel: ObservableObject {
 
     private let defaults: UserDefaults
     private var pendingClassicPassargTokens: [String]?
+    // AppDelegate.application(_:open:) and .onOpenURL can both deliver the
+    // same cold-start URL; dedupe by absoluteString within a short window
+    // instead of handling (and launching) it twice.
+    private var lastHandledURLString: String?
+    private var lastHandledURLDate: Date?
+    private static let duplicateURLWindow: TimeInterval = 2
     private var loginTask: Task<Void, Never>?
     private var otpTask: Task<Void, Never>?
     private var otpCountdownTask: Task<Void, Never>?
@@ -122,7 +128,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func selectGame(_ game: GameDefinition) {
+    func selectGame(_ game: GameDefinition, autoPickExecutable: Bool = true) {
         loginTask?.cancel()
         otpTask?.cancel()
         otpCountdownTask?.cancel()
@@ -135,7 +141,8 @@ final class AppModel: ObservableObject {
             // When a Classic NexonPlug URL is already driving this selection,
             // handleClassicNexonPlug() owns the picker; scheduling this delayed
             // picker too would show two pickers in a row.
-            if mode == .standard, normalizedExecutablePath.isEmpty, pendingClassicPassargTokens == nil {
+            if autoPickExecutable, mode == .standard, normalizedExecutablePath.isEmpty,
+               pendingClassicPassargTokens == nil {
                 Task { [weak self] in
                     try? await Task.sleep(for: .milliseconds(180))
                     guard let self, self.selectedGameID == game.id else { return }
@@ -145,7 +152,7 @@ final class AppModel: ObservableObject {
         } else {
             screen = .welcome
             statusMessage = "已選擇\(game.name)"
-            if mode == .standard, normalizedExecutablePath.isEmpty {
+            if autoPickExecutable, mode == .standard, normalizedExecutablePath.isEmpty {
                 Task { [weak self] in
                     try? await Task.sleep(for: .milliseconds(180))
                     guard let self, self.selectedGameID == game.id else { return }
@@ -464,8 +471,18 @@ final class AppModel: ObservableObject {
     }
 
     func handleOpenedURL(_ url: URL) {
+        let urlString = url.absoluteString
+        let now = Date()
+        if urlString == lastHandledURLString,
+           let lastDate = lastHandledURLDate,
+           now.timeIntervalSince(lastDate) < Self.duplicateURLWindow {
+            appendLog("忽略重複遞送的 NexonPlug URL：\(urlString)")
+            return
+        }
+        lastHandledURLString = urlString
+        lastHandledURLDate = now
         guard let parsed = NexonPlugURLParser.parse(url) else {
-            appendLog("忽略非 NexonPlug URL：\(url.absoluteString)")
+            appendLog("忽略非 NexonPlug URL：\(urlString)")
             return
         }
         if NexonPlugURLParser.isMapleStoryClassic(gameCode: parsed.gameCode) {
@@ -479,7 +496,9 @@ final class AppModel: ObservableObject {
         guard !parsed.passargTokens.isEmpty else {
             // selectGame() → resetGameSession() clears errorMessage, so it must
             // run first; setting errorMessage afterwards keeps it visible.
-            selectGame(GameDefinition.mapleStoryClassic)
+            // autoPickExecutable: false avoids popping the file picker 180ms
+            // later for a URL we're about to reject as invalid.
+            selectGame(GameDefinition.mapleStoryClassic, autoPickExecutable: false)
             errorMessage = "NexonPlug 連結缺少 passarg，無法啟動經典版"
             return
         }

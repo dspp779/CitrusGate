@@ -2,7 +2,18 @@ import AppKit
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var onOpenURLs: (([URL]) -> Void)?
+    // Cold-start URLs can arrive via application(_:open:) before SwiftUI's
+    // .onAppear has installed the handler; buffer them and flush once the
+    // handler is set instead of silently dropping them.
+    var onOpenURLs: (([URL]) -> Void)? {
+        didSet {
+            guard onOpenURLs != nil, !pendingURLs.isEmpty else { return }
+            let urls = pendingURLs
+            pendingURLs = []
+            onOpenURLs?(urls)
+        }
+    }
+    private var pendingURLs: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let removedMenus = Set(["Edit", "View", "Window", "編輯", "顯示方式", "視窗"])
@@ -19,7 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        onOpenURLs?(urls)
+        if let onOpenURLs {
+            onOpenURLs(urls)
+        } else {
+            pendingURLs.append(contentsOf: urls)
+        }
     }
 }
 

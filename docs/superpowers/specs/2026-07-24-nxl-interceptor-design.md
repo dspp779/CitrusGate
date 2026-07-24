@@ -22,6 +22,7 @@ This is a temporary investigation tool. Once the URL shape is confirmed, a later
 | --- | --- |
 | Packaging | Independent app in-repo; `build-nxl-interceptor.sh` → `dist/NXL Interceptor.app` |
 | Architecture | Minimal AppKit Swift stub only (no embedded shell script) |
+| CPU / binary | arm64 only (local diagnostic machine; no universal / Intel build) |
 | UI | `NSAlert` with the full URL (`url.absoluteString`) |
 | Process lifetime | Show alert → user clicks OK → `NSApp.terminate(nil)` |
 | Cold open (no URL) | Alert explaining the app waits for `nxl://` calls → OK → quit |
@@ -75,10 +76,11 @@ dist/NXL Interceptor.app   # build output
 
 `build-nxl-interceptor.sh` mirrors the spirit of `build.sh` but stays minimal:
 
-- Compile `Interceptor/Sources/*.swift` with `swiftc` as a universal binary (arm64 + x86_64), same pattern as `build.sh`, targeting macOS 13.0
+- Compile `Interceptor/Sources/*.swift` with `swiftc` for **arm64 only** (`-target arm64-apple-macosx13.0`), sufficient for local diagnostic use on this machine
 - Assemble `dist/NXL Interceptor.app/Contents/{MacOS,Info.plist}`
 - No app icon required for this diagnostic tool
 - No release signing / notarization required unless later requested
+- No Intel / universal binary for this tool
 
 ## Launch Services conflict
 

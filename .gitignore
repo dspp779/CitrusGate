@@ -14,6 +14,7 @@ __pycache__/
 *.py[cod]
 
 # Local credentials and diagnostic output
+auth/
 beanfun-cookie.txt
 *cookie*.txt
 debug/

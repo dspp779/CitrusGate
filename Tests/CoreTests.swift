@@ -143,7 +143,7 @@ enum CoreTests {
 
     private static func testNexonWineFullLaunchCommand() throws {
         let command = LaunchCommandBuilder.nexonWineCommand(
-            executablePath: "/Users/jjc/Documents/ogs/gamania Games/MapleStory/MapleStory.exe",
+            executablePath: "/Games/Maple Story/MapleStory.exe",
             accountID: "T9ACCOUNT",
             otp: "12345678"
         )
@@ -154,7 +154,7 @@ enum CoreTests {
         export LC_ALL=zh_TW.UTF-8
         export LC_CTYPE=zh_TW.UTF-8
 
-        wine --bottle maplestory --workdir '/Users/jjc/Documents/ogs/gamania Games/MapleStory' '/Users/jjc/Documents/ogs/gamania Games/MapleStory/MapleStory.exe' tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678
+        wine --bottle maplestory --workdir '/Games/Maple Story' '/Games/Maple Story/MapleStory.exe' tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678
         """
         try expect(command == expected, "Nexon Wine full command mismatch")
 
@@ -208,7 +208,7 @@ enum CoreTests {
     }
 
     private static func testMapleStoryWineLauncher() throws {
-        let exe = "/Users/jjc/Documents/ogs/gamania Games/MapleStory/MapleStory.exe"
+        let exe = "/Games/Maple Story/MapleStory.exe"
         let args = MapleStoryWineLauncher.arguments(
             executablePath: exe,
             accountID: "T9ACCOUNT",
@@ -216,7 +216,7 @@ enum CoreTests {
         )
         try expect(args == [
             "--bottle", "maplestory",
-            "--workdir", "/Users/jjc/Documents/ogs/gamania Games/MapleStory",
+            "--workdir", "/Games/Maple Story",
             exe,
             "tw.login.maplestory.beanfun.com",
             "8484",

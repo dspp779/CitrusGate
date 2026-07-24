@@ -270,10 +270,6 @@ enum AdvancedLaunchCommandStyle: String, CaseIterable, Identifiable {
 }
 
 enum LaunchCommandBuilder {
-    static let mapleStoryWineCXRoot =
-        "/Applications/MapleStory Launcher.app/Contents/SharedSupport/maplestoryna"
-    static let mapleStoryWineBottle = "maplestory"
-
     static func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
@@ -302,13 +298,13 @@ enum LaunchCommandBuilder {
             .gameArguments(accountID: accountID, otp: otp)
             .joined(separator: " ")
         return """
-        export CX_ROOT=\(shellQuote(mapleStoryWineCXRoot))
+        export CX_ROOT=\(shellQuote(MapleStoryWineLauncher.cxRoot))
         export PATH="$CX_ROOT/MapleStory Launcher:$PATH"
         export LANG=zh_TW.UTF-8
         export LC_ALL=zh_TW.UTF-8
         export LC_CTYPE=zh_TW.UTF-8
 
-        wine --bottle \(mapleStoryWineBottle) --workdir \(shellQuote(workdir)) \(shellQuote(executablePath)) \(args)
+        wine --bottle \(MapleStoryWineLauncher.bottle) --workdir \(shellQuote(workdir)) \(shellQuote(executablePath)) \(args)
         """
     }
 

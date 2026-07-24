@@ -14,7 +14,8 @@ enum CoreTests {
         try testNexonWineFullLaunchCommand()
         try testNexonPlugURLParser()
         try testClassicOpenArguments()
-        print("CoreTests: 11 tests passed")
+        try testMapleStoryWineLauncher()
+        print("CoreTests: 12 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -204,6 +205,43 @@ enum CoreTests {
 
         try expect(NexonPlugURLParser.parse(URL(string: "https://example.com")!) == nil, "wrong scheme")
         try expect(NexonPlugURLParser.parse(URL(string: "nexonplug://?passarg=x")!) == nil, "missing game")
+    }
+
+    private static func testMapleStoryWineLauncher() throws {
+        let exe = "/Users/jjc/Documents/ogs/gamania Games/MapleStory/MapleStory.exe"
+        let args = MapleStoryWineLauncher.arguments(
+            executablePath: exe,
+            accountID: "T9ACCOUNT",
+            otp: "12345678"
+        )
+        try expect(args == [
+            "--bottle", "maplestory",
+            "--workdir", "/Users/jjc/Documents/ogs/gamania Games/MapleStory",
+            exe,
+            "tw.login.maplestory.beanfun.com",
+            "8484",
+            "BeanFun",
+            "T9ACCOUNT",
+            "12345678",
+        ], "wine argv mismatch")
+
+        let wineURL = MapleStoryWineLauncher.wineExecutableURL()
+        try expect(
+            wineURL.path.hasSuffix("/MapleStory Launcher/wine"),
+            "wine path suffix"
+        )
+        try expect(
+            wineURL.path.contains("SharedSupport/maplestoryna"),
+            "wine under CX_ROOT"
+        )
+
+        let env = MapleStoryWineLauncher.processEnvironment()
+        try expect(env["CX_ROOT"] == MapleStoryWineLauncher.cxRoot, "CX_ROOT")
+        try expect(env["LANG"] == "zh_TW.UTF-8", "LANG")
+        try expect(env["LC_ALL"] == "zh_TW.UTF-8", "LC_ALL")
+        try expect(env["LC_CTYPE"] == "zh_TW.UTF-8", "LC_CTYPE")
+        let path = try require(env["PATH"], "PATH")
+        try expect(path.hasPrefix(MapleStoryWineLauncher.cxRoot + "/MapleStory Launcher:"), "PATH prefix")
     }
 
     private static func testClassicOpenArguments() throws {

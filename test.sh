@@ -17,6 +17,7 @@ swiftc -swift-version 5 -sdk "$sdk" -module-cache-path "$module_cache" \
     "$project_dir/Sources/Models.swift" \
     "$project_dir/Sources/DESCipher.swift" \
     "$project_dir/Sources/NexonPlugURLParser.swift" \
+    "$project_dir/Sources/MapleStoryWineLauncher.swift" \
     "$project_dir/Tests/CoreTests.swift" \
     -o "$build_dir/CoreTests"
 "$build_dir/CoreTests"

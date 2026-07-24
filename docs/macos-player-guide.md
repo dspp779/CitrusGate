@@ -9,7 +9,8 @@
 | 項目 | 用途 |
 | --- | --- |
 | 美版 [MapleStory Launcher](https://www.nexon.com/maplestory/) | 提供 Nexon／CodeWeavers 客製的 Wine（CrossOver OEM）與 bottle |
-| [gamania Games Manager](https://tw.beanfun.com/ggm/index.html) | 下載／安裝台版楓之谷；安裝過程可能要求 .NET 6 |
+| ~~[gamania Games Manager](https://tw.beanfun.com/ggm/index.html)~~ | ~~下載／安裝台版楓之谷；安裝過程可能要求 .NET 6~~ |
+| [台灣官方楓之谷主程式](https://maplestory.beanfun.com/download) | 楓之谷主程式。直接下載就不用橘子的下載管理器了 |
 | [CitrusGate v0.1.0](https://github.com/dspp779/CitrusGate/releases/tag/v0.1.0) | 取得 Beanfun 帳號 ID 與 OTP，並組出完整啟動指令 |
 | Beanfun 帳號 | 台版登入憑證來源 |
 

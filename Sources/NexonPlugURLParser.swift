@@ -27,11 +27,7 @@ enum NexonPlugURLParser {
         let gameCode = String(parts[0])
         guard !gameCode.isEmpty else { return nil }
         let obdTag = parts.count > 1 ? String(parts[1]) : nil
-        let rawPassarg = (value("passarg") ?? "").replacingOccurrences(of: "+", with: " ")
-        let tokens = rawPassarg
-            .split { $0.isWhitespace }
-            .map(String.init)
-            .filter { !$0.isEmpty }
+        let tokens = passargTokens(from: url)
         return Parsed(gameCode: gameCode, obdTag: obdTag, passargTokens: tokens)
     }
 
@@ -40,5 +36,37 @@ enum NexonPlugURLParser {
             return ["-n", executablePath]
         }
         return ["-n", executablePath, "--args"] + passargTokens
+    }
+
+    private static func passargTokens(from url: URL) -> [String] {
+        guard let query = url.query else { return [] }
+        let raw = rawQueryValue(named: "passarg", in: query) ?? ""
+        let normalized = raw.replacingOccurrences(of: "+", with: " ")
+        let decoded = normalized.removingPercentEncoding ?? normalized
+        return decoded
+            .split(whereSeparator: isASCIIWhitespace)
+            .map(String.init)
+            .filter { !$0.isEmpty }
+    }
+
+    private static func rawQueryValue(named name: String, in query: String) -> String? {
+        for pair in query.split(separator: "&", omittingEmptySubsequences: false) {
+            let parts = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard let keyPart = parts.first else { continue }
+            if String(keyPart) == name {
+                return parts.count > 1 ? String(parts[1]) : ""
+            }
+        }
+        return nil
+    }
+
+    private static func isASCIIWhitespace(_ char: Character) -> Bool {
+        guard char.unicodeScalars.count == 1, let scalar = char.unicodeScalars.first else { return false }
+        switch scalar.value {
+        case 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20:
+            return true
+        default:
+            return false
+        }
     }
 }

@@ -183,6 +183,13 @@ enum CoreTests {
         let plusParsed = try require(NexonPlugURLParser.parse(plus), "parse plus")
         try expect(plusParsed.passargTokens == ["a", "b"], "plus as space")
 
+        let encodedPlus = try require(
+            URL(string: "nexonplug://?game=2982@1&passarg=a%2Bb"),
+            "encoded plus url"
+        )
+        let encodedPlusParsed = try require(NexonPlugURLParser.parse(encodedPlus), "parse encoded plus")
+        try expect(encodedPlusParsed.passargTokens == ["a+b"], "encoded plus preserved")
+
         let other = try require(URL(string: "nexonplug://?game=9999@1&passarg=x"), "other")
         let otherParsed = try require(NexonPlugURLParser.parse(other), "parse other")
         try expect(!NexonPlugURLParser.isMapleStoryClassic(gameCode: otherParsed.gameCode), "not classic")
@@ -205,6 +212,15 @@ enum CoreTests {
             "2373",
             "944",
         ], "classic open argv")
+
+        let emptyArgs = NexonPlugURLParser.classicOpenArguments(
+            executablePath: "/Games/Classic/Maplestory_Classic.exe",
+            passargTokens: []
+        )
+        try expect(emptyArgs == [
+            "-n",
+            "/Games/Classic/Maplestory_Classic.exe",
+        ], "classic open argv empty passarg")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

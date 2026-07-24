@@ -414,26 +414,7 @@ final class AppModel: ObservableObject {
             errorMessage = "請先選擇遊戲"
             return
         }
-        let path = normalizedExecutablePath
-        guard !path.isEmpty else {
-            errorMessage = "請先選擇 \(game.executableName)"
-            return
-        }
-
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
-              !isDirectory.boolValue else {
-            errorMessage = "找不到\(game.name)主程式：\(path)"
-            return
-        }
-        guard URL(fileURLWithPath: path).pathExtension.lowercased() == "exe" else {
-            errorMessage = "請選擇副檔名為 .exe 的檔案"
-            return
-        }
-        guard let account = selectedAccount, let otp else {
-            errorMessage = "請先選擇帳號並取得 OTP"
-            return
-        }
+        guard let (path, account, otp) = validatedLaunchTarget(for: game) else { return }
 
         launchedAccountID = nil
         beginLaunchUI()
@@ -491,26 +472,7 @@ final class AppModel: ObservableObject {
             errorMessage = "MapleStory Launcher 啟動僅支援新楓之谷"
             return
         }
-        let path = normalizedExecutablePath
-        guard !path.isEmpty else {
-            errorMessage = "請先選擇 \(game.executableName)"
-            return
-        }
-
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
-              !isDirectory.boolValue else {
-            errorMessage = "找不到\(game.name)主程式：\(path)"
-            return
-        }
-        guard URL(fileURLWithPath: path).pathExtension.lowercased() == "exe" else {
-            errorMessage = "請選擇副檔名為 .exe 的檔案"
-            return
-        }
-        guard let account = selectedAccount, let otp else {
-            errorMessage = "請先選擇帳號並取得 OTP"
-            return
-        }
+        guard let (path, account, otp) = validatedLaunchTarget(for: game) else { return }
         let wineURL = MapleStoryWineLauncher.wineExecutableURL()
         guard FileManager.default.isExecutableFile(atPath: wineURL.path) else {
             errorMessage = "找不到 MapleStory Launcher 的 Wine。請先安裝並開啟過 MapleStory Launcher。"
@@ -544,6 +506,35 @@ final class AppModel: ObservableObject {
             markLaunchFailed()
             present(error)
         }
+    }
+
+    /// Validates the current executable path, account, and OTP for launching
+    /// `game`, setting `errorMessage` and returning `nil` on the first failed
+    /// check. Shared by `launchViaCyder()` and `launchViaMapleStoryLauncherWine()`.
+    private func validatedLaunchTarget(
+        for game: GameDefinition
+    ) -> (path: String, account: GameAccount, otp: OTPResult)? {
+        let path = normalizedExecutablePath
+        guard !path.isEmpty else {
+            errorMessage = "請先選擇 \(game.executableName)"
+            return nil
+        }
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            errorMessage = "找不到\(game.name)主程式：\(path)"
+            return nil
+        }
+        guard URL(fileURLWithPath: path).pathExtension.lowercased() == "exe" else {
+            errorMessage = "請選擇副檔名為 .exe 的檔案"
+            return nil
+        }
+        guard let account = selectedAccount, let otp else {
+            errorMessage = "請先選擇帳號並取得 OTP"
+            return nil
+        }
+        return (path, account, otp)
     }
 
     private func beginLaunchUI() {

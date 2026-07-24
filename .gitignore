@@ -3,6 +3,7 @@
 
 # Swift build products and packaged applications
 .build/
+.build-nxl-interceptor/
 dist/
 
 # Local git worktrees

@@ -27,11 +27,11 @@ App 每次啟動預設使用一般模式。先從附有官方縮圖的精簡清�
 
 可從 macOS 上方的「遊戲」選單切換遊戲或重新選擇目前遊戲的主程式。
 
-新楓之谷在一般模式提供「以 Cyder 開啟」與「以 MapleStory Launcher 開啟」；後者使用 Launcher 內建 Wine（`maplestory` bottle）。啟動後按鈕會暫時停用約 10 秒並顯示狀態。
+新楓之谷在一般模式提供「以 Cyder 開啟」與「以 MapleStory Launcher 開啟」；**目前新楓之谷請用後者**（Launcher 內建 CrossOver 25／Wine 10，`maplestory` bottle）。Cyder 對新楓之谷的官方修補移植仍在進行中，尚不可靠。啟動後按鈕會暫時停用約 10 秒並顯示狀態。
 
 一般模式使用精簡的固定大小視窗，QR 畫面只保留 QR Code、掃描說明、剩餘時間與重新產生按鈕。QR 區域以一致的 `12pt` 四邊白色留白延伸至視窗上、左、右邊緣。視窗不可縮放或進入全螢幕；系統選單不顯示「編輯」、「顯示方式」與「視窗」。
 
-另支援**楓之谷：經典版**：無 QR。選擇 `Maplestory_Classic.exe` 後開啟官方登入網頁；網頁透過 `NexonPlug://` 回傳參數，App 以 `open -n … --args` 啟動（預設走 Cyder）。請在經典版畫面將 `NexonPlug` 設為由 Beanfun OTP 處理；其他 gameCode 會轉發官方 NexonPlug.app。測完可改回 `com.nexon.plug`。Beanfun OTP 僅允許單一實例；若由網頁 `NexonPlug://` 冷啟動並成功開啟經典版，啟動完成後會自動結束。
+另支援**楓之谷：經典版**（教學稱新楓之谷：經典版）：無 QR。選擇 `Maplestory_Classic.exe` 後開啟官方登入網頁；網頁透過 `NexonPlug://` 回傳參數，App 以 `open -n … --args` 啟動（預設走 Cyder）。**請勿用北美 MapleStory Launcher 開經典版**（CrossOver 25／Wine 10 缺 `EventWriteEx` 等）。請在經典版畫面將 `NexonPlug` 設為由 Beanfun OTP 處理；其他 gameCode 會轉發官方 NexonPlug.app。測完可改回 `com.nexon.plug`。Beanfun OTP 僅允許單一實例；若由網頁 `NexonPlug://` 冷啟動並成功開啟經典版，啟動完成後會自動結束。完整步驟見 [`docs/macos-player-guide-classic.md`](docs/macos-player-guide-classic.md)。
 
 ## 進階模式
 
@@ -47,7 +47,7 @@ open -n '/path/to/mabinogi.exe' --args /N:<ServiceAccountID> /V:<OTP> /T:gamania
 open -n '/path/to/elsword.exe' --args <ServiceAccountID> <OTP> TW
 ```
 
-Wine 形式（僅新楓之谷）對齊 [`docs/macos-player-guide.md`](docs/macos-player-guide.md)：`maplestory` bottle、`zh_TW.UTF-8` locale，以及 MapleStory Launcher SharedSupport 的 Wine 路徑。macOS 完整安裝與手動啟動流程亦見該文件。
+Wine 形式（僅新楓之谷）對齊 [`docs/macos-player-guide.md`](docs/macos-player-guide.md)：`maplestory` bottle、`zh_TW.UTF-8` locale，以及 MapleStory Launcher SharedSupport 的 Wine 路徑。macOS 完整安裝與手動啟動流程亦見該文件；經典版見 [`docs/macos-player-guide-classic.md`](docs/macos-player-guide-classic.md)。
 
 天堂系列、新龍之谷與 CSO 尚無可核對的命令列登入格式，因此完整指令不會誤傳楓之谷參數；實際啟動時會先複製 OTP，再以 `open -n` 開啟使用者指定的主程式。
 

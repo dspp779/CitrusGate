@@ -132,7 +132,10 @@ final class AppModel: ObservableObject {
         if game.authFlow == .webNexonPlug {
             screen = .classic
             statusMessage = "已選擇\(game.name)。請選擇主程式並開啟登入網頁。"
-            if mode == .standard, normalizedExecutablePath.isEmpty {
+            // When a Classic NexonPlug URL is already driving this selection,
+            // handleClassicNexonPlug() owns the picker; scheduling this delayed
+            // picker too would show two pickers in a row.
+            if mode == .standard, normalizedExecutablePath.isEmpty, pendingClassicPassargTokens == nil {
                 Task { [weak self] in
                     try? await Task.sleep(for: .milliseconds(180))
                     guard let self, self.selectedGameID == game.id else { return }
@@ -474,8 +477,10 @@ final class AppModel: ObservableObject {
 
     private func handleClassicNexonPlug(_ parsed: NexonPlugURLParser.Parsed) {
         guard !parsed.passargTokens.isEmpty else {
-            errorMessage = "NexonPlug 連結缺少 passarg，無法啟動經典版"
+            // selectGame() → resetGameSession() clears errorMessage, so it must
+            // run first; setting errorMessage afterwards keeps it visible.
             selectGame(GameDefinition.mapleStoryClassic)
+            errorMessage = "NexonPlug 連結缺少 passarg，無法啟動經典版"
             return
         }
         pendingClassicPassargTokens = parsed.passargTokens
@@ -487,14 +492,12 @@ final class AppModel: ObservableObject {
                 forKey: executablePathKey(for: GameDefinition.mapleStoryClassic)
             ) ?? ""
         }
-        if normalizedExecutablePath.isEmpty {
+        if !isValidExecutablePath(normalizedExecutablePath) {
             chooseExecutable()
         }
-        guard !normalizedExecutablePath.isEmpty, let tokens = pendingClassicPassargTokens else {
+        guard isValidExecutablePath(normalizedExecutablePath), let tokens = pendingClassicPassargTokens else {
             pendingClassicPassargTokens = nil
-            if normalizedExecutablePath.isEmpty {
-                statusMessage = "已取消"
-            }
+            statusMessage = "已取消"
             return
         }
         pendingClassicPassargTokens = nil
@@ -503,7 +506,7 @@ final class AppModel: ObservableObject {
 
     private func launchClassic(passargTokens: [String]) {
         let path = normalizedExecutablePath
-        guard !path.isEmpty else {
+        guard isValidExecutablePath(path) else {
             errorMessage = "請先選擇 Maplestory_Classic.exe"
             return
         }
@@ -563,6 +566,12 @@ final class AppModel: ObservableObject {
 
     private var normalizedExecutablePath: String {
         executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// A path is only usable if it's non-empty and actually exists on disk;
+    /// a stale/removed path must be treated the same as no path at all.
+    private func isValidExecutablePath(_ path: String) -> Bool {
+        !path.isEmpty && FileManager.default.fileExists(atPath: path)
     }
 
     private func executablePathKey(for game: GameDefinition) -> String {

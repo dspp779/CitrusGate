@@ -15,6 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var pendingURLs: [URL] = []
 
+    /// True from launch until a short settle after first activation.
+    /// URLs delivered while true are treated as cold-start by AppModel (Task 2).
+    private(set) var isWithinColdStartURLWindow = true
+    private var didScheduleColdStartWindowEnd = false
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let removedMenus = Set(["Edit", "View", "Window", "編輯", "顯示方式", "視窗"])
         DispatchQueue.main.async {
@@ -22,6 +27,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             mainMenu.items
                 .filter { removedMenus.contains($0.title) }
                 .forEach { mainMenu.removeItem($0) }
+        }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard !didScheduleColdStartWindowEnd else { return }
+        didScheduleColdStartWindowEnd = true
+        // Allow Launch Services to deliver cold-start open: slightly after activate.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
+            self?.isWithinColdStartURLWindow = false
         }
     }
 
@@ -44,7 +58,7 @@ struct BeanfunOTPApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup {
+        Window("Beanfun OTP", id: "main") {
             ContentView(model: model)
                 .onAppear {
                     appDelegate.onOpenURLs = { urls in

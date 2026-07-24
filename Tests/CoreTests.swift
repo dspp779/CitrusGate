@@ -12,7 +12,9 @@ enum CoreTests {
         try testShellQuote()
         try testOpenFullLaunchCommand()
         try testNexonWineFullLaunchCommand()
-        print("CoreTests: 9 tests passed")
+        try testNexonPlugURLParser()
+        try testClassicOpenArguments()
+        print("CoreTests: 11 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -158,6 +160,51 @@ enum CoreTests {
             openFallback.hasPrefix("open -n "),
             "non-MapleStory must not emit Wine command even if style is nexonWine"
         )
+    }
+
+    private static func testNexonPlugURLParser() throws {
+        let url = try require(
+            URL(string: "nexonplug://?game=2982@2141&passarg=4554314%20sessabc%202373%20944"),
+            "classic url"
+        )
+        let parsed = try require(NexonPlugURLParser.parse(url), "parse classic")
+        try expect(parsed.gameCode == "2982", "gameCode")
+        try expect(parsed.obdTag == "2141", "obdTag")
+        try expect(
+            parsed.passargTokens == ["4554314", "sessabc", "2373", "944"],
+            "passarg tokens"
+        )
+        try expect(NexonPlugURLParser.isMapleStoryClassic(gameCode: parsed.gameCode), "is classic")
+
+        let plus = try require(
+            URL(string: "NexonPlug://?game=2982@1&passarg=a+b"),
+            "plus url"
+        )
+        let plusParsed = try require(NexonPlugURLParser.parse(plus), "parse plus")
+        try expect(plusParsed.passargTokens == ["a", "b"], "plus as space")
+
+        let other = try require(URL(string: "nexonplug://?game=9999@1&passarg=x"), "other")
+        let otherParsed = try require(NexonPlugURLParser.parse(other), "parse other")
+        try expect(!NexonPlugURLParser.isMapleStoryClassic(gameCode: otherParsed.gameCode), "not classic")
+
+        try expect(NexonPlugURLParser.parse(URL(string: "https://example.com")!) == nil, "wrong scheme")
+        try expect(NexonPlugURLParser.parse(URL(string: "nexonplug://?passarg=x")!) == nil, "missing game")
+    }
+
+    private static func testClassicOpenArguments() throws {
+        let args = NexonPlugURLParser.classicOpenArguments(
+            executablePath: "/Games/Classic/Maplestory_Classic.exe",
+            passargTokens: ["4554314", "sessabc", "2373", "944"]
+        )
+        try expect(args == [
+            "-n",
+            "/Games/Classic/Maplestory_Classic.exe",
+            "--args",
+            "4554314",
+            "sessabc",
+            "2373",
+            "944",
+        ], "classic open argv")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreServices
 import Foundation
 import UniformTypeIdentifiers
 
@@ -8,6 +9,10 @@ final class AppModel: ObservableObject {
     private static let legacyMapleStoryPathKey = "MapleStoryExecutablePath"
     private static let executablePathPrefix = "ExecutablePath."
     private static let advancedLaunchCommandStyleKey = "AdvancedLaunchCommandStyle"
+    private static let officialNexonPlugAppPath =
+        "/Library/Application Support/Nexon/Plug/NexonPlug.app"
+    private static let nexonPlugScheme = "NexonPlug"
+    private static let beanfunOTPBundleID = "local.ogom.beanfunotp"
 
     @Published private(set) var mode: AppMode = .defaultMode
     @Published var screen: AppScreen = .games
@@ -39,6 +44,7 @@ final class AppModel: ObservableObject {
     }
 
     private let defaults: UserDefaults
+    private var pendingClassicPassargTokens: [String]?
     private var loginTask: Task<Void, Never>?
     private var otpTask: Task<Void, Never>?
     private var otpCountdownTask: Task<Void, Never>?
@@ -123,13 +129,25 @@ final class AppModel: ObservableObject {
         selectedGameID = game.id
         executablePath = defaults.string(forKey: executablePathKey(for: game)) ?? ""
         resetGameSession()
-        screen = .welcome
-        statusMessage = "已選擇\(game.name)"
-        if mode == .standard, normalizedExecutablePath.isEmpty {
-            Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(180))
-                guard let self, self.selectedGameID == game.id else { return }
-                self.chooseExecutable()
+        if game.authFlow == .webNexonPlug {
+            screen = .classic
+            statusMessage = "已選擇\(game.name)。請選擇主程式並開啟登入網頁。"
+            if mode == .standard, normalizedExecutablePath.isEmpty {
+                Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(180))
+                    guard let self, self.selectedGameID == game.id else { return }
+                    self.chooseExecutable()
+                }
+            }
+        } else {
+            screen = .welcome
+            statusMessage = "已選擇\(game.name)"
+            if mode == .standard, normalizedExecutablePath.isEmpty {
+                Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(180))
+                    guard let self, self.selectedGameID == game.id else { return }
+                    self.chooseExecutable()
+                }
             }
         }
     }
@@ -147,6 +165,11 @@ final class AppModel: ObservableObject {
         guard let game = selectedGame else {
             errorMessage = "請先選擇遊戲"
             screen = .games
+            return
+        }
+        guard game.usesBeanfunQR else {
+            errorMessage = "楓之谷：經典版請使用網頁登入"
+            screen = .classic
             return
         }
         loginTask?.cancel()
@@ -413,6 +436,129 @@ final class AppModel: ObservableObject {
         otpSecondsRemaining = 0
         screen = .accounts
         statusMessage = "請選擇\(selectedGame?.name ?? "遊戲")帳號"
+    }
+
+    func openClassicLoginPage() {
+        guard let game = selectedGame, game.authFlow == .webNexonPlug,
+              let url = game.loginURL else {
+            errorMessage = "無法開啟登入網頁"
+            return
+        }
+        NSWorkspace.shared.open(url)
+        statusMessage = "已開啟\(game.name)登入網頁"
+    }
+
+    func claimNexonPlugHandler() {
+        let status = LSSetDefaultHandlerForURLScheme(
+            Self.nexonPlugScheme as NSString,
+            Self.beanfunOTPBundleID as NSString
+        )
+        if status == noErr {
+            statusMessage = "已將 NexonPlug 設為由 Beanfun OTP 處理"
+        } else {
+            errorMessage = "設定 NexonPlug 處理程式失敗（代碼 \(status)）"
+        }
+    }
+
+    func handleOpenedURL(_ url: URL) {
+        guard let parsed = NexonPlugURLParser.parse(url) else {
+            appendLog("忽略非 NexonPlug URL：\(url.absoluteString)")
+            return
+        }
+        if NexonPlugURLParser.isMapleStoryClassic(gameCode: parsed.gameCode) {
+            handleClassicNexonPlug(parsed)
+        } else {
+            forwardNexonPlug(url)
+        }
+    }
+
+    private func handleClassicNexonPlug(_ parsed: NexonPlugURLParser.Parsed) {
+        guard !parsed.passargTokens.isEmpty else {
+            errorMessage = "NexonPlug 連結缺少 passarg，無法啟動經典版"
+            selectGame(GameDefinition.mapleStoryClassic)
+            return
+        }
+        pendingClassicPassargTokens = parsed.passargTokens
+        if selectedGameID != GameDefinition.mapleStoryClassic.id {
+            selectGame(GameDefinition.mapleStoryClassic)
+        } else {
+            screen = .classic
+            executablePath = defaults.string(
+                forKey: executablePathKey(for: GameDefinition.mapleStoryClassic)
+            ) ?? ""
+        }
+        if normalizedExecutablePath.isEmpty {
+            chooseExecutable()
+        }
+        guard !normalizedExecutablePath.isEmpty, let tokens = pendingClassicPassargTokens else {
+            pendingClassicPassargTokens = nil
+            if normalizedExecutablePath.isEmpty {
+                statusMessage = "已取消"
+            }
+            return
+        }
+        pendingClassicPassargTokens = nil
+        launchClassic(passargTokens: tokens)
+    }
+
+    private func launchClassic(passargTokens: [String]) {
+        let path = normalizedExecutablePath
+        guard !path.isEmpty else {
+            errorMessage = "請先選擇 Maplestory_Classic.exe"
+            return
+        }
+        let process = Process()
+        let standardError = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = NexonPlugURLParser.classicOpenArguments(
+            executablePath: path,
+            passargTokens: passargTokens
+        )
+        process.standardError = standardError
+        process.terminationHandler = { [weak self] process in
+            let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
+            let errorText = String(data: errorData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            Task { @MainActor in
+                guard let self else { return }
+                self.isBusy = false
+                if process.terminationStatus == 0 {
+                    self.statusMessage = "已透過 Cyder 啟動楓之谷：經典版"
+                    self.appendLog("執行 open -n：classic executable=\(path) args=\(passargTokens.joined(separator: " "))")
+                } else {
+                    let message = errorText.flatMap { $0.isEmpty ? nil : $0 }
+                        ?? "open 結束代碼 \(process.terminationStatus)"
+                    self.present(BeanfunError.rejected(message))
+                }
+            }
+        }
+        isBusy = true
+        statusMessage = "正在以 open -n 透過 Cyder 啟動楓之谷：經典版…"
+        do {
+            try process.run()
+        } catch {
+            isBusy = false
+            present(error)
+        }
+    }
+
+    private func forwardNexonPlug(_ url: URL) {
+        let plugPath = Self.officialNexonPlugAppPath
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: plugPath, isDirectory: &isDir) else {
+            errorMessage = "找不到 NexonPlug.app，無法轉發其他遊戲的 NexonPlug 連結"
+            return
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", plugPath, url.absoluteString]
+        do {
+            try process.run()
+            statusMessage = "已將 NexonPlug 連結轉發給官方 NexonPlug"
+            appendLog("forward NexonPlug → \(plugPath): \(url.absoluteString)")
+        } catch {
+            present(error)
+        }
     }
 
     private var normalizedExecutablePath: String {

@@ -93,6 +93,8 @@ struct ContentView: View {
             standardQRView
         case .accounts, .otp:
             standardAccountView
+        case .classic:
+            classicPlaceholderView
         }
     }
 
@@ -218,7 +220,24 @@ struct ContentView: View {
             advancedAccountView
         case .otp:
             otpView
+        case .classic:
+            classicPlaceholderView
         }
+    }
+
+    // Minimal placeholder; full Classic UI (login page / handler buttons) lands in a follow-up task.
+    private var classicPlaceholderView: some View {
+        VStack(spacing: 12) {
+            if let game = model.selectedGame {
+                Text(game.name)
+                    .font(.title2.bold())
+            }
+            Text(model.statusMessage)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var welcomeView: some View {

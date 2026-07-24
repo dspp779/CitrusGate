@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    var onOpenURLs: (([URL]) -> Void)?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let removedMenus = Set(["Edit", "View", "Window", "編輯", "顯示方式", "視窗"])
         DispatchQueue.main.async {
@@ -15,6 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        onOpenURLs?(urls)
+    }
 }
 
 @main
@@ -25,6 +31,12 @@ struct BeanfunOTPApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(model: model)
+                .onAppear {
+                    appDelegate.onOpenURLs = { urls in
+                        urls.forEach { model.handleOpenedURL($0) }
+                    }
+                }
+                .onOpenURL { model.handleOpenedURL($0) }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 400, height: 440)

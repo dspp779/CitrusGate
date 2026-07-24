@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, !self.handledOpenURL else { return }
             self.showAndQuit(
                 title: "NXL Interceptor",
-                message: "此 App 用來攔截 nxl:// 連結。\n請從網頁或終端機開啟 nxl://… 再試。"
+                message: "此 App 用來攔截 nxl:// 與 NexonPlug:// 連結。\n請從網頁或終端機開啟後再試。"
             )
         }
     }
@@ -16,13 +16,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         handledOpenURL = true
         let text: String
+        let title: String
         if let url = urls.first {
             let absolute = url.absoluteString
             text = absolute.isEmpty ? "(empty absoluteString)" : absolute
+            if let scheme = url.scheme, !scheme.isEmpty {
+                title = "\(scheme) URL"
+            } else {
+                title = "URL"
+            }
         } else {
             text = "(no URL)"
+            title = "URL"
         }
-        showAndQuit(title: "nxl URL", message: text)
+        showAndQuit(title: title, message: text)
     }
 
     private func showAndQuit(title: String, message: String) {

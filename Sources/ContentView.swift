@@ -383,28 +383,55 @@ struct ContentView: View {
                         Text(model.statusMessage)
                     }
                     .foregroundStyle(.secondary)
-                } else if let account = model.selectedAccount,
-                          model.launchedAccountID == account.id {
+                } else if let account = model.selectedAccount {
                     VStack(spacing: 10) {
-                        Label("以 \(account.displayName) 開啟遊戲，已啟動", systemImage: "checkmark.circle.fill")
+                        if model.selectedGame?.id == GameDefinition.mapleStory.id {
+                            HStack(spacing: 10) {
+                                Button {
+                                    model.launchSelectedAccountViaCyder()
+                                } label: {
+                                    Label("以 Cyder 開啟", systemImage: "play.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.areLaunchButtonsDisabled)
+
+                                Button {
+                                    model.launchSelectedAccountViaWine()
+                                } label: {
+                                    Label("以 MapleStory Launcher 開啟", systemImage: "wineglass")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(model.areLaunchButtonsDisabled)
+                            }
+                        } else {
+                            Button {
+                                model.launchSelectedAccountViaCyder()
+                            } label: {
+                                Label("以 \(account.displayName) 開啟遊戲", systemImage: "play.fill")
+                                    .frame(minWidth: 190)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .disabled(model.areLaunchButtonsDisabled)
+                        }
+
+                        if !model.launchStatusText.isEmpty {
+                            HStack(spacing: 8) {
+                                if model.launchUIPhase == .launching {
+                                    ProgressView().controlSize(.small)
+                                }
+                                Text(model.launchStatusText)
+                                    .foregroundStyle(model.launchUIPhase == .launched ? .green : .secondary)
+                            }
                             .font(.headline)
-                            .foregroundStyle(.green)
-                        if model.selectedGame?.supportsAutomaticLogin == false {
+                        } else if model.selectedGame?.supportsAutomaticLogin == false,
+                                  model.launchedAccountID == account.id {
                             HStack {
                                 Button("複製帳號") { model.copyAccountID() }
                                 Button("複製 OTP") { model.copyOTP() }
                             }
                         }
                     }
-                } else if let account = model.selectedAccount {
-                    Button {
-                        model.launchSelectedAccount()
-                    } label: {
-                        Label("以 \(account.displayName) 開啟遊戲", systemImage: "play.fill")
-                            .frame(minWidth: 190)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
                 }
 
                 Button("選擇其他遊戲") { model.showGamePicker() }

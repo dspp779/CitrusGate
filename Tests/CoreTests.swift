@@ -154,9 +154,36 @@ enum CoreTests {
         export LC_ALL=zh_TW.UTF-8
         export LC_CTYPE=zh_TW.UTF-8
 
-        wine --bottle maplestory --workdir '/Games/Maple Story' '/Games/Maple Story/MapleStory.exe' tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678
+        wine --bottle maplestory --wait-children --enable-alt-loader macdrv --workdir '/Games/Maple Story' '/Games/Maple Story/MapleStory.exe' tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678
         """
         try expect(command == expected, "Nexon Wine full command mismatch")
+
+        let commandWithHUD = LaunchCommandBuilder.nexonWineCommand(
+            executablePath: "/Games/Maple Story/MapleStory.exe",
+            accountID: "T9ACCOUNT",
+            otp: "12345678",
+            enableMetalHUD: true
+        )
+        let expectedWithHUD = """
+        export CX_ROOT='/Applications/MapleStory Launcher.app/Contents/SharedSupport/maplestoryna'
+        export PATH="$CX_ROOT/MapleStory Launcher:$PATH"
+        export LANG=zh_TW.UTF-8
+        export LC_ALL=zh_TW.UTF-8
+        export LC_CTYPE=zh_TW.UTF-8
+        export MTL_HUD_ENABLED=1
+
+        wine --bottle maplestory --wait-children --enable-alt-loader macdrv --workdir '/Games/Maple Story' '/Games/Maple Story/MapleStory.exe' tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678
+        """
+        try expect(commandWithHUD == expectedWithHUD, "Nexon Wine full command with HUD mismatch")
+
+        let openWithHUD = LaunchCommandBuilder.openCommand(
+            executablePath: "/Games/Maple Story/MapleStory.exe",
+            game: GameDefinition.mapleStory,
+            accountID: "T9ACCOUNT",
+            otp: "12345678",
+            enableMetalHUD: true
+        )
+        try expect(openWithHUD.hasPrefix("MTL_HUD_ENABLED=1 open -n "), "open command with Metal HUD prefix mismatch")
 
         let openFallback = LaunchCommandBuilder.fullCommand(
             style: .nexonWine,
@@ -216,6 +243,8 @@ enum CoreTests {
         )
         try expect(args == [
             "--bottle", "maplestory",
+            "--wait-children",
+            "--enable-alt-loader", "macdrv",
             "--workdir", "/Games/Maple Story",
             exe,
             "tw.login.maplestory.beanfun.com",
@@ -240,8 +269,12 @@ enum CoreTests {
         try expect(env["LANG"] == "zh_TW.UTF-8", "LANG")
         try expect(env["LC_ALL"] == "zh_TW.UTF-8", "LC_ALL")
         try expect(env["LC_CTYPE"] == "zh_TW.UTF-8", "LC_CTYPE")
+        try expect(env["MTL_HUD_ENABLED"] == nil, "MTL_HUD_ENABLED default nil")
         let path = try require(env["PATH"], "PATH")
         try expect(path.hasPrefix(MapleStoryWineLauncher.cxRoot + "/MapleStory Launcher:"), "PATH prefix")
+
+        let envWithHUD = MapleStoryWineLauncher.processEnvironment(enableMetalHUD: true)
+        try expect(envWithHUD["MTL_HUD_ENABLED"] == "1", "MTL_HUD_ENABLED when true")
     }
 
     private static func testClassicOpenArguments() throws {

@@ -278,33 +278,42 @@ enum LaunchCommandBuilder {
         executablePath: String,
         game: GameDefinition,
         accountID: String,
-        otp: String
+        otp: String,
+        enableMetalHUD: Bool = false
     ) -> String {
         let quotedPath = shellQuote(executablePath)
         let args = game.gameArguments(accountID: accountID, otp: otp)
+        let envPrefix = enableMetalHUD ? "MTL_HUD_ENABLED=1 " : ""
         if args.isEmpty {
-            return "open -n \(quotedPath)"
+            return "\(envPrefix)open -n \(quotedPath)"
         }
-        return "open -n \(quotedPath) --args \(args.joined(separator: " "))"
+        return "\(envPrefix)open -n \(quotedPath) --args \(args.joined(separator: " "))"
     }
 
     static func nexonWineCommand(
         executablePath: String,
         accountID: String,
-        otp: String
+        otp: String,
+        enableMetalHUD: Bool = false
     ) -> String {
         let workdir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
         let args = GameDefinition.mapleStory
             .gameArguments(accountID: accountID, otp: otp)
             .joined(separator: " ")
-        return """
+        var envExports = """
         export CX_ROOT=\(shellQuote(MapleStoryWineLauncher.cxRoot))
         export PATH="$CX_ROOT/MapleStory Launcher:$PATH"
         export LANG=zh_TW.UTF-8
         export LC_ALL=zh_TW.UTF-8
         export LC_CTYPE=zh_TW.UTF-8
+        """
+        if enableMetalHUD {
+            envExports += "\nexport MTL_HUD_ENABLED=1"
+        }
+        return """
+        \(envExports)
 
-        wine --bottle \(MapleStoryWineLauncher.bottle) --workdir \(shellQuote(workdir)) \(shellQuote(executablePath)) \(args)
+        wine --bottle \(MapleStoryWineLauncher.bottle) --wait-children --enable-alt-loader macdrv --workdir \(shellQuote(workdir)) \(shellQuote(executablePath)) \(args)
         """
     }
 
@@ -313,20 +322,23 @@ enum LaunchCommandBuilder {
         game: GameDefinition,
         executablePath: String,
         accountID: String,
-        otp: String
+        otp: String,
+        enableMetalHUD: Bool = false
     ) -> String {
         if style == .nexonWine, game.id == GameDefinition.mapleStory.id {
             return nexonWineCommand(
                 executablePath: executablePath,
                 accountID: accountID,
-                otp: otp
+                otp: otp,
+                enableMetalHUD: enableMetalHUD
             )
         }
         return openCommand(
             executablePath: executablePath,
             game: game,
             accountID: accountID,
-            otp: otp
+            otp: otp,
+            enableMetalHUD: enableMetalHUD
         )
     }
 }

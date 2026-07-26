@@ -403,6 +403,8 @@ struct ContentView: View {
                                 .buttonStyle(.bordered)
                                 .disabled(model.areLaunchButtonsDisabled)
                             }
+                            Toggle("顯示 Metal Performance HUD (MTL_HUD_ENABLED=1)", isOn: $model.enableMetalHUD)
+                                .font(.caption)
                         } else {
                             Button {
                                 model.launchSelectedAccountViaCyder()
@@ -576,6 +578,8 @@ struct ContentView: View {
                         .pickerStyle(.segmented)
                         .labelsHidden()
                     }
+
+                    Toggle("顯示 Metal Performance HUD (MTL_HUD_ENABLED=1)", isOn: $model.enableMetalHUD)
 
                     if let command = model.fullLaunchCommand {
                         Text(command)

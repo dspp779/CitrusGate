@@ -228,6 +228,7 @@ ACCOUNT_ID='T9你的帳號ID'
 OTP='一次性OTP'
 
 wine --bottle maplestory \
+  --wait-children --enable-alt-loader macdrv \
   --workdir "$GAME_DIR" \
   "$GAME_DIR/MapleStory.exe" \
   tw.login.maplestory.beanfun.com 8484 BeanFun "$ACCOUNT_ID" "$OTP"

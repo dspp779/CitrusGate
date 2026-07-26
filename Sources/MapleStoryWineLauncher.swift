@@ -11,7 +11,10 @@ enum MapleStoryWineLauncher {
             .appendingPathComponent("wine", isDirectory: false)
     }
 
-    static func processEnvironment(cxRoot: String = cxRoot) -> [String: String] {
+    static func processEnvironment(
+        cxRoot: String = cxRoot,
+        enableMetalHUD: Bool = false
+    ) -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         let wineDir = URL(fileURLWithPath: cxRoot)
             .appendingPathComponent("MapleStory Launcher", isDirectory: true)
@@ -21,6 +24,11 @@ enum MapleStoryWineLauncher {
         env["LANG"] = "zh_TW.UTF-8"
         env["LC_ALL"] = "zh_TW.UTF-8"
         env["LC_CTYPE"] = "zh_TW.UTF-8"
+        if enableMetalHUD {
+            env["MTL_HUD_ENABLED"] = "1"
+        } else {
+            env.removeValue(forKey: "MTL_HUD_ENABLED")
+        }
         return env
     }
 
@@ -36,6 +44,6 @@ enum MapleStoryWineLauncher {
             accountID: accountID,
             otp: otp
         )
-        return ["--bottle", bottle, "--workdir", workdir, executablePath] + gameArgs
+        return ["--bottle", bottle, "--wait-children", "--enable-alt-loader", "macdrv", "--workdir", workdir, executablePath] + gameArgs
     }
 }

@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     private static let legacyMapleStoryPathKey = "MapleStoryExecutablePath"
     private static let executablePathPrefix = "ExecutablePath."
     private static let advancedLaunchCommandStyleKey = "AdvancedLaunchCommandStyle"
+    private static let enableMetalHUDKey = "EnableMetalHUD"
     private static let officialNexonPlugAppPath =
         "/Library/Application Support/Nexon/Plug/NexonPlug.app"
     private static let nexonPlugScheme = "NexonPlug"
@@ -53,6 +54,11 @@ final class AppModel: ObservableObject {
     @Published var advancedLaunchCommandStyle: AdvancedLaunchCommandStyle {
         didSet {
             defaults.set(advancedLaunchCommandStyle.rawValue, forKey: Self.advancedLaunchCommandStyleKey)
+        }
+    }
+    @Published var enableMetalHUD: Bool {
+        didSet {
+            defaults.set(enableMetalHUD, forKey: Self.enableMetalHUDKey)
         }
     }
 
@@ -91,6 +97,7 @@ final class AppModel: ObservableObject {
         } else {
             advancedLaunchCommandStyle = .open
         }
+        enableMetalHUD = defaults.bool(forKey: Self.enableMetalHUDKey)
     }
 
     var games: [GameDefinition] { GameDefinition.all }
@@ -122,7 +129,8 @@ final class AppModel: ObservableObject {
             game: game,
             executablePath: path,
             accountID: account.id,
-            otp: otp.value
+            otp: otp.value,
+            enableMetalHUD: enableMetalHUD
         )
     }
 
@@ -422,6 +430,11 @@ final class AppModel: ObservableObject {
         beginLaunchUI()
 
         let process = Process()
+        var env = ProcessInfo.processInfo.environment
+        if enableMetalHUD {
+            env["MTL_HUD_ENABLED"] = "1"
+        }
+        process.environment = env
         let standardError = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = game.openArguments(
@@ -493,7 +506,7 @@ final class AppModel: ObservableObject {
             accountID: account.id,
             otp: otp.value
         )
-        process.environment = MapleStoryWineLauncher.processEnvironment()
+        process.environment = MapleStoryWineLauncher.processEnvironment(enableMetalHUD: enableMetalHUD)
 
         do {
             try process.run()

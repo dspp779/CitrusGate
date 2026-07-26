@@ -123,50 +123,6 @@ struct GameDefinition: Identifiable, Hashable {
         mapleStory,
         mapleStoryClassic,
         GameDefinition(
-            id: "lineage-international",
-            name: "天堂國際服",
-            serviceCode: "611639",
-            serviceRegion: "T0",
-            imageName: "lineage-international.jpg",
-            executableName: "Lineage.exe",
-            launchStyle: .manual,
-            accountFlow: .gameZone,
-            authFlow: .beanfunQR
-        ),
-        GameDefinition(
-            id: "lineage",
-            name: "天堂",
-            serviceCode: "600035",
-            serviceRegion: "T7",
-            imageName: "lineage.jpg",
-            executableName: "Lineage.exe",
-            launchStyle: .manual,
-            accountFlow: .gameZone,
-            authFlow: .beanfunQR
-        ),
-        GameDefinition(
-            id: "lineage-health",
-            name: "天堂健康服",
-            serviceCode: "600037",
-            serviceRegion: "T7",
-            imageName: "lineage.jpg",
-            executableName: "Lineage.exe",
-            launchStyle: .manual,
-            accountFlow: .gameZone,
-            authFlow: .beanfunQR
-        ),
-        GameDefinition(
-            id: "lineage-free",
-            name: "天堂免費服",
-            serviceCode: "600041",
-            serviceRegion: "BE",
-            imageName: "lineage.jpg",
-            executableName: "Lineage.exe",
-            launchStyle: .manual,
-            accountFlow: .gameZone,
-            authFlow: .beanfunQR
-        ),
-        GameDefinition(
             id: "mabinogi",
             name: "新瑪奇",
             serviceCode: "600309",
@@ -186,28 +142,6 @@ struct GameDefinition: Identifiable, Hashable {
             executableName: "elsword.exe",
             launchStyle: .elsword,
             accountFlow: .gameZone,
-            authFlow: .beanfunQR
-        ),
-        GameDefinition(
-            id: "dragon-nest",
-            name: "新龍之谷",
-            serviceCode: "611653",
-            serviceRegion: "VA",
-            imageName: "dragon-nest.jpg",
-            executableName: "DragonNest.exe",
-            launchStyle: .manual,
-            accountFlow: .gameZone,
-            authFlow: .beanfunQR
-        ),
-        GameDefinition(
-            id: "cso",
-            name: "絕對武力 Online",
-            serviceCode: "610153",
-            serviceRegion: "TN",
-            imageName: "cso.jpg",
-            executableName: "cstrike-online.exe",
-            launchStyle: .manual,
-            accountFlow: .accountsManagement,
             authFlow: .beanfunQR
         ),
     ]

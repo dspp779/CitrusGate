@@ -60,13 +60,11 @@ enum CoreTests {
 
     private static func testMultiGameCatalog() throws {
         let games = GameDefinition.all
-        try expect(games.count == 10, "expected ten games including Classic")
+        try expect(games.count == 4, "expected four games including Classic")
         try expect(Set(games.map(\.id)).count == games.count, "game IDs must be unique")
         try expect(!games.contains { $0.name.contains("爆爆王") }, "BnB must not be included")
         try expect(games.contains { $0.serviceKey == "600309_A2" }, "Mabinogi service missing")
         try expect(games.contains { $0.serviceKey == "300148_AF" }, "Elsword service missing")
-        try expect(games.contains { $0.serviceKey == "611653_VA" }, "Dragon Nest service missing")
-        try expect(games.contains { $0.serviceKey == "610153_TN" }, "CSO service missing")
         try expect(games.contains { $0.id == "maplestory-classic" }, "Classic missing")
         let classic = try require(games.first { $0.id == "maplestory-classic" }, "classic")
         try expect(classic.authFlow == .webNexonPlug, "classic auth flow")
@@ -96,13 +94,13 @@ enum CoreTests {
                 == ["AFACCOUNT", "OTP456", "TW"],
             "Elsword arguments mismatch"
         )
-        let lineage = try require(
-            GameDefinition.all.first { $0.id == "lineage" },
-            "Lineage definition missing"
+        let classic = try require(
+            GameDefinition.all.first { $0.id == "maplestory-classic" },
+            "Classic definition missing"
         )
         try expect(
-            lineage.openArguments(executablePath: "/Games/Lineage.exe", accountID: "id", otp: "otp")
-                == ["-n", "/Games/Lineage.exe"],
+            classic.openArguments(executablePath: "/Games/Maplestory_Classic.exe", accountID: "id", otp: "otp")
+                == ["-n", "/Games/Maplestory_Classic.exe"],
             "manual launch must not pass unverified arguments"
         )
     }
@@ -131,14 +129,14 @@ enum CoreTests {
             "MapleStory open full command mismatch"
         )
 
-        let lineage = try require(GameDefinition.all.first { $0.id == "lineage" }, "Lineage missing")
+        let classic = try require(GameDefinition.all.first { $0.id == "maplestory-classic" }, "Classic missing")
         let manual = LaunchCommandBuilder.openCommand(
-            executablePath: "/Games/Lineage.exe",
-            game: lineage,
+            executablePath: "/Games/Maplestory_Classic.exe",
+            game: classic,
             accountID: "id",
             otp: "otp"
         )
-        try expect(manual == "open -n '/Games/Lineage.exe'", "manual open full command must omit --args")
+        try expect(manual == "open -n '/Games/Maplestory_Classic.exe'", "manual open full command must omit --args")
     }
 
     private static func testNexonWineFullLaunchCommand() throws {

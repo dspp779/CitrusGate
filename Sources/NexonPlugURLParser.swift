@@ -31,11 +31,20 @@ enum NexonPlugURLParser {
         return Parsed(gameCode: gameCode, obdTag: obdTag, passargTokens: tokens)
     }
 
-    static func classicOpenArguments(executablePath: String, passargTokens: [String]) -> [String] {
-        if passargTokens.isEmpty {
-            return ["-n", executablePath]
+    static func classicOpenArguments(
+        executablePath: String,
+        passargTokens: [String],
+        enableMetalHUD: Bool = false
+    ) -> [String] {
+        var result = ["-n"]
+        if enableMetalHUD {
+            result += ["--env", "MTL_HUD_ENABLED=1"]
         }
-        return ["-n", executablePath, "--args"] + passargTokens
+        result.append(executablePath)
+        if !passargTokens.isEmpty {
+            result += ["--args"] + passargTokens
+        }
+        return result
     }
 
     private static func passargTokens(from url: URL) -> [String] {

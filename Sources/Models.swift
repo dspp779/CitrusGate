@@ -84,11 +84,22 @@ struct GameDefinition: Identifiable, Hashable {
         }
     }
 
-    func openArguments(executablePath: String, accountID: String, otp: String) -> [String] {
+    func openArguments(
+        executablePath: String,
+        accountID: String,
+        otp: String,
+        enableMetalHUD: Bool = false
+    ) -> [String] {
         let arguments = gameArguments(accountID: accountID, otp: otp)
-        return arguments.isEmpty
-            ? ["-n", executablePath]
-            : ["-n", executablePath, "--args"] + arguments
+        var result = ["-n"]
+        if enableMetalHUD {
+            result += ["--env", "MTL_HUD_ENABLED=1"]
+        }
+        result.append(executablePath)
+        if !arguments.isEmpty {
+            result += ["--args"] + arguments
+        }
+        return result
     }
 
     func commandLine(accountID: String, otp: String) -> String {
@@ -217,11 +228,11 @@ enum LaunchCommandBuilder {
     ) -> String {
         let quotedPath = shellQuote(executablePath)
         let args = game.gameArguments(accountID: accountID, otp: otp)
-        let envPrefix = enableMetalHUD ? "MTL_HUD_ENABLED=1 " : ""
+        let envArg = enableMetalHUD ? "--env MTL_HUD_ENABLED=1 " : ""
         if args.isEmpty {
-            return "\(envPrefix)open -n \(quotedPath)"
+            return "open -n \(envArg)\(quotedPath)"
         }
-        return "\(envPrefix)open -n \(quotedPath) --args \(args.joined(separator: " "))"
+        return "open -n \(envArg)\(quotedPath) --args \(args.joined(separator: " "))"
     }
 
     static func nexonWineCommand(

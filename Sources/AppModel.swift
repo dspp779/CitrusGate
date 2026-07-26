@@ -434,7 +434,8 @@ final class AppModel: ObservableObject {
         process.arguments = game.openArguments(
             executablePath: path,
             accountID: account.id,
-            otp: otp.value
+            otp: otp.value,
+            enableMetalHUD: enableMetalHUD
         )
         process.standardError = standardError
         process.terminationHandler = { [weak self] process in
@@ -671,7 +672,8 @@ final class AppModel: ObservableObject {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = NexonPlugURLParser.classicOpenArguments(
             executablePath: path,
-            passargTokens: passargTokens
+            passargTokens: passargTokens,
+            enableMetalHUD: enableMetalHUD
         )
         process.standardError = standardError
         process.terminationHandler = { [weak self] process in

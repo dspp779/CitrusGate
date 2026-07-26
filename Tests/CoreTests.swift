@@ -181,7 +181,7 @@ enum CoreTests {
             otp: "12345678",
             enableMetalHUD: true
         )
-        try expect(openWithHUD.hasPrefix("MTL_HUD_ENABLED=1 open -n "), "open command with Metal HUD prefix mismatch")
+        try expect(openWithHUD.hasPrefix("open -n --env MTL_HUD_ENABLED=1 "), "open command with Metal HUD flag mismatch")
 
         let openFallback = LaunchCommandBuilder.fullCommand(
             style: .nexonWine,

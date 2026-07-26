@@ -14,7 +14,7 @@
 | 建置 | `./build.sh` | `./build-legacy.sh` |
 | 輸出 | `dist/Beanfun OTP.app` | `dist/Beanfun OTP Legacy.app` |
 
-10.12–12 請用 Legacy。13 以上請用一般版（最新版本皆為 `v0.4.0`）。Beanfun 登入協定若變更，兩個版本的 client 都需要同步更新。
+10.12–12 請用 Legacy。13 以上請用一般版（最新版本皆為 `v0.4.1`）。Beanfun 登入協定若變更，兩個版本的 client 都需要同步更新。
 
 以下「一般模式」與「進階模式」說明僅適用於 **Beanfun OTP**（Modern 版）。
 

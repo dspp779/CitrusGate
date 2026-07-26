@@ -246,6 +246,12 @@ struct ContentView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            Button("將 NexonPlug 設為由 Beanfun OTP 處理") {
+                model.claimNexonPlugHandler()
+            }
+            .buttonStyle(.link)
+            Toggle("顯示遊戲流暢度 (FPS)", isOn: $model.enableMetalHUD)
+                .font(.caption)
             Text(model.executablePath.isEmpty ? "尚未選擇 Maplestory_Classic.exe" : model.executablePath)
                 .font(.caption)
                 .lineLimit(2)
@@ -259,18 +265,23 @@ struct ContentView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .disabled(model.isBusy)
-            Button("將 NexonPlug 設為由 Beanfun OTP 處理") {
-                model.claimNexonPlugHandler()
-            }
-            .buttonStyle(.link)
             if model.mode == .standard {
                 Text(model.statusMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-            Button("選擇其他遊戲") { model.showGamePicker() }
-                .buttonStyle(.link)
+            VStack(spacing: 3) {
+                if let game = model.selectedGame {
+                    Button("選擇\(game.name)主程式…") { model.chooseExecutable() }
+                        .buttonStyle(.link)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Button("選擇其他遊戲") { model.showGamePicker() }
+                    .buttonStyle(.link)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -420,7 +431,7 @@ struct ContentView: View {
                                 .buttonStyle(.bordered)
                                 .disabled(model.areLaunchButtonsDisabled)
                             }
-                            Toggle("顯示 Metal Performance HUD (MTL_HUD_ENABLED=1)", isOn: $model.enableMetalHUD)
+                            Toggle("顯示遊戲流暢度 (FPS)", isOn: $model.enableMetalHUD)
                                 .font(.caption)
                         } else {
                             Button {
@@ -613,7 +624,7 @@ struct ContentView: View {
                         .labelsHidden()
                     }
 
-                    Toggle("顯示 Metal Performance HUD (MTL_HUD_ENABLED=1)", isOn: $model.enableMetalHUD)
+                    Toggle("顯示遊戲流暢度 (FPS)", isOn: $model.enableMetalHUD)
 
                     if let command = model.fullLaunchCommand {
                         Text(command)

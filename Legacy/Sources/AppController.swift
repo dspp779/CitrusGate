@@ -1,11 +1,17 @@
 import AppKit
+import UniformTypeIdentifiers
 
 final class AppController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private enum Screen {
-        case games, qr, accounts, otp
+        case games, qr, accounts, otp, classic
     }
 
     private static let lastGameIDKey = "LegacyLastGameID"
+    private static let legacyMapleStoryPathKey = "MapleStoryExecutablePath"
+    private static let executablePathPrefix = "ExecutablePath."
+    private static let officialNexonPlugAppPath = "/Library/Application Support/Nexon/Plug/NexonPlug.app"
+    private static let nexonPlugScheme = "NexonPlug"
+    private static let beanfunOTPBundleID = "local.ogom.beanfunotp.legacy"
 
     private let client = BeanfunClient { message in
         NSLog("%@", message)
@@ -20,29 +26,55 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private var accounts: [GameAccount] = []
     private var selectedAccountIndex: Int = -1
     private var selectedAccount: GameAccount?
-    private var otpValue: String = ""
+    private var otpResult: OTPResult?
 
     private var pollTimer: Timer?
     private var countdownTimer: Timer?
     private var qrSecondsRemaining: Int = 60
     private var loginCompletionInFlight = false
+    private var quitAfterSuccessfulClassicLaunch = false
+    private var pendingClassicPassargTokens: [String]?
 
-    // Outlets created in code.
+    private var executablePath: String = "" {
+        didSet {
+            updateExePathLabel()
+        }
+    }
+    private var enableMetalHUD: Bool = false
+
+    // UI Controls
     private let statusLabel = NSTextField(wrappingLabelWithString: "選擇遊戲")
     private let scrollView = NSScrollView()
     private let tableView = NSTableView()
     private let imageView = NSImageView()
     private let qrStatusLabel = NSTextField(labelWithString: "")
+
+    // Executable path & settings UI
+    private let exePathLabel = NSTextField(wrappingLabelWithString: "")
+    private let chooseExeButton = NSButton(title: "選擇主程式…", target: nil, action: nil)
+    private let hudCheckBox = NSButton(checkboxWithTitle: "顯示遊戲流暢度 (FPS)", target: nil, action: nil)
+    private var exeContainer: NSStackView!
+
+    // Classic Mode UI
+    private let openClassicWebButton = NSButton(title: "開啟官方登入網頁", target: nil, action: nil)
+    private let claimNexonPlugButton = NSButton(title: "將 NexonPlug 設為由 Beanfun OTP 處理", target: nil, action: nil)
+    private let classicNoticeLabel = NSTextField(wrappingLabelWithString: "網頁登入後會透過 NexonPlug:// 傳送參數啟動經典版。")
+    private var classicContainer: NSStackView!
+
+    // OTP Block UI
     private let accountCaptionLabel = NSTextField(labelWithString: "帳號")
     private let accountField = NSTextField(labelWithString: "")
     private let otpCaptionLabel = NSTextField(labelWithString: "OTP")
     private let otpField = NSTextField(labelWithString: "")
+
+    // Action Buttons
     private let primaryButton = NSButton(title: "下一步", target: nil, action: nil)
     private let secondaryButton = NSButton(title: "複製帳號", target: nil, action: nil)
+    private let copyCmdButton = NSButton(title: "複製指令", target: nil, action: nil)
     private let backButton = NSButton(title: "選擇其他遊戲", target: nil, action: nil)
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 400))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 480))
         buildUI()
     }
 
@@ -64,7 +96,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         statusLabel.font = NSFont.systemFont(ofSize: 13)
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("main"))
-        column.width = 360
+        column.width = 380
         tableView.addTableColumn(column)
         tableView.headerView = nil
         tableView.dataSource = self
@@ -78,7 +110,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         scrollView.hasVerticalScroller = true
         scrollView.borderType = .bezelBorder
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.heightAnchor.constraint(equalToConstant: 210).isActive = true
+        scrollView.heightAnchor.constraint(equalToConstant: 180).isActive = true
 
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -89,6 +121,47 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         qrStatusLabel.font = NSFont.systemFont(ofSize: 12)
         qrStatusLabel.textColor = NSColor.disabledControlTextColor
 
+        // Executable Path Section
+        exePathLabel.alignment = .center
+        exePathLabel.font = NSFont.systemFont(ofSize: 11)
+        exePathLabel.textColor = NSColor.secondaryLabelColor
+        exePathLabel.maximumNumberOfLines = 2
+        exePathLabel.lineBreakMode = .byTruncatingMiddle
+
+        chooseExeButton.bezelStyle = .rounded
+        chooseExeButton.target = self
+        chooseExeButton.action = #selector(handleChooseExecutable)
+
+        hudCheckBox.state = .off
+        hudCheckBox.target = self
+        hudCheckBox.action = #selector(handleHudCheckBoxToggled)
+
+        exeContainer = NSStackView(views: [exePathLabel, chooseExeButton, hudCheckBox])
+        exeContainer.orientation = .vertical
+        exeContainer.alignment = .centerX
+        exeContainer.spacing = 6
+        exeContainer.translatesAutoresizingMaskIntoConstraints = false
+
+        // Classic Mode Section
+        openClassicWebButton.bezelStyle = .rounded
+        openClassicWebButton.target = self
+        openClassicWebButton.action = #selector(handleOpenClassicWeb)
+
+        claimNexonPlugButton.bezelStyle = .rounded
+        claimNexonPlugButton.target = self
+        claimNexonPlugButton.action = #selector(handleClaimNexonPlug)
+
+        classicNoticeLabel.alignment = .center
+        classicNoticeLabel.font = NSFont.systemFont(ofSize: 11)
+        classicNoticeLabel.textColor = NSColor.secondaryLabelColor
+
+        classicContainer = NSStackView(views: [classicNoticeLabel, openClassicWebButton, claimNexonPlugButton])
+        classicContainer.orientation = .vertical
+        classicContainer.alignment = .centerX
+        classicContainer.spacing = 8
+        classicContainer.translatesAutoresizingMaskIntoConstraints = false
+
+        // OTP Section
         for caption in [accountCaptionLabel, otpCaptionLabel] {
             caption.alignment = .left
             caption.font = NSFont.boldSystemFont(ofSize: 12)
@@ -111,6 +184,16 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         otpField.isBezeled = false
         otpField.drawsBackground = false
 
+        let otpBlock = NSStackView(views: [
+            accountCaptionLabel, accountField, otpCaptionLabel, otpField,
+        ])
+        otpBlock.orientation = .vertical
+        otpBlock.alignment = .leading
+        otpBlock.spacing = 4
+        otpBlock.setCustomSpacing(12, after: accountField)
+        otpBlock.translatesAutoresizingMaskIntoConstraints = false
+
+        // Action Buttons
         primaryButton.bezelStyle = .rounded
         primaryButton.target = self
         primaryButton.action = #selector(handlePrimary)
@@ -119,55 +202,59 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         secondaryButton.target = self
         secondaryButton.action = #selector(handleSecondary)
 
-        backButton.bezelStyle = .rounded
+        copyCmdButton.bezelStyle = .rounded
+        copyCmdButton.target = self
+        copyCmdButton.action = #selector(handleCopyCmd)
+
+        backButton.isBordered = false
         backButton.target = self
         backButton.action = #selector(handleBack)
+        setSubtleButtonTitle(backButton, title: "‹ 選擇其他遊戲")
 
-        let buttonRow = NSStackView(views: [primaryButton, secondaryButton])
+        let buttonRow = NSStackView(views: [primaryButton, secondaryButton, copyCmdButton])
         buttonRow.orientation = .horizontal
-        buttonRow.spacing = 12
+        buttonRow.spacing = 10
         buttonRow.distribution = .fillEqually
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
 
-        let otpBlock = NSStackView(views: [
-            accountCaptionLabel, accountField, otpCaptionLabel, otpField,
-        ])
-        otpBlock.orientation = .vertical
-        otpBlock.alignment = .leading
-        otpBlock.spacing = 4
-        otpBlock.setCustomSpacing(12, after: accountField)
-
         let root = NSStackView(views: [
-            statusLabel, scrollView, imageView, qrStatusLabel, otpBlock, buttonRow, backButton,
+            statusLabel, scrollView, imageView, qrStatusLabel, classicContainer, otpBlock, exeContainer, buttonRow, backButton,
         ])
         root.orientation = .vertical
         root.alignment = .centerX
-        root.spacing = 12
-        root.edgeInsets = NSEdgeInsets(top: 16, left: 0, bottom: 16, right: 0)
+        root.spacing = 10
+        root.edgeInsets = NSEdgeInsets(top: 14, left: 0, bottom: 14, right: 0)
         root.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(root)
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
-            root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
+            root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
             root.topAnchor.constraint(equalTo: view.topAnchor),
             root.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             otpBlock.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             otpBlock.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            exeContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            exeContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            classicContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            classicContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             buttonRow.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             buttonRow.trailingAnchor.constraint(equalTo: root.trailingAnchor),
         ])
     }
 
-    // MARK: - Visibility / state
+    // MARK: - Visibility & State
 
     private func updateVisibility() {
         scrollView.isHidden = !(screen == .games || screen == .accounts)
         imageView.isHidden = screen != .qr
         qrStatusLabel.isHidden = screen != .qr
+        classicContainer.isHidden = screen != .classic
         otpBlockVisibility(screen == .otp)
+        exeContainer.isHidden = !(screen == .qr || screen == .accounts || screen == .otp || screen == .classic)
+
         if screen == .games || screen == .accounts {
             tableView.reloadData()
         }
@@ -187,22 +274,44 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             primaryButton.title = "下一步"
             primaryButton.isEnabled = tableView.selectedRow >= 0
             secondaryButton.isHidden = true
+            copyCmdButton.isHidden = true
             backButton.isHidden = true
         case .qr:
             primaryButton.title = "重新產生"
             primaryButton.isEnabled = true
             secondaryButton.isHidden = true
+            copyCmdButton.isHidden = true
             backButton.isHidden = false
         case .accounts:
             primaryButton.title = "取得 OTP"
             primaryButton.isEnabled = selectedAccountIndex >= 0
             secondaryButton.isHidden = true
+            copyCmdButton.isHidden = true
             backButton.isHidden = false
         case .otp:
-            primaryButton.title = "複製 OTP"
+            if selectedGame?.id == GameDefinition.mapleStory.id {
+                primaryButton.title = "以 Cyder 開啟"
+                primaryButton.isEnabled = isValidExecutablePath(executablePath)
+                secondaryButton.title = "以 Maple Launcher 開啟"
+                secondaryButton.isHidden = false
+            } else if isValidExecutablePath(executablePath) {
+                primaryButton.title = "開啟遊戲"
+                primaryButton.isEnabled = true
+                secondaryButton.title = "複製 OTP"
+                secondaryButton.isHidden = false
+            } else {
+                primaryButton.title = "複製 OTP"
+                primaryButton.isEnabled = true
+                secondaryButton.title = "複製帳號"
+                secondaryButton.isHidden = false
+            }
+            copyCmdButton.isHidden = false
+            backButton.isHidden = false
+        case .classic:
+            primaryButton.title = "選擇主程式…"
             primaryButton.isEnabled = true
-            secondaryButton.title = "複製帳號"
-            secondaryButton.isHidden = false
+            secondaryButton.isHidden = true
+            copyCmdButton.isHidden = true
             backButton.isHidden = false
         }
     }
@@ -212,6 +321,42 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
               let index = games.firstIndex(where: { $0.id == lastID }) else { return }
         tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         tableView.scrollRowToVisible(index)
+        loadExecutablePath(for: games[index])
+    }
+
+    private func loadExecutablePath(for game: GameDefinition) {
+        let key = Self.executablePathPrefix + game.id
+        if let stored = UserDefaults.standard.string(forKey: key), !stored.isEmpty {
+            executablePath = stored
+        } else if game.id == GameDefinition.mapleStory.id,
+                  let legacy = UserDefaults.standard.string(forKey: Self.legacyMapleStoryPathKey),
+                  !legacy.isEmpty {
+            executablePath = legacy
+            UserDefaults.standard.set(legacy, forKey: key)
+        } else {
+            executablePath = ""
+        }
+    }
+
+    private func saveExecutablePath(_ path: String, for game: GameDefinition) {
+        executablePath = path
+        let key = Self.executablePathPrefix + game.id
+        UserDefaults.standard.set(path, forKey: key)
+    }
+
+    private func updateExePathLabel() {
+        guard let game = selectedGame else {
+            exePathLabel.stringValue = ""
+            return
+        }
+        if executablePath.isEmpty {
+            exePathLabel.stringValue = "（未指定 \(game.executableName) 主程式）"
+        } else if !FileManager.default.fileExists(atPath: executablePath) {
+            exePathLabel.stringValue = "⚠️ 找不到主程式：\(executablePath)"
+        } else {
+            exePathLabel.stringValue = "主程式：\(executablePath)"
+        }
+        updateButtons()
     }
 
     private func clearTableSelection() {
@@ -225,7 +370,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         accounts = []
         selectedAccount = nil
         clearTableSelection()
-        otpValue = ""
+        otpResult = nil
         accountField.stringValue = ""
         otpField.stringValue = ""
         imageView.image = nil
@@ -244,12 +389,41 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     func tableViewSelectionDidChange(_ notification: Notification) {
         switch screen {
         case .games:
+            if games.indices.contains(tableView.selectedRow) {
+                loadExecutablePath(for: games[tableView.selectedRow])
+            }
             updateButtons()
         case .accounts:
             selectedAccountIndex = tableView.selectedRow
             updateButtons()
         default:
             break
+        }
+    }
+
+    @objc private func handleChooseExecutable() {
+        chooseExecutable()
+    }
+
+    @objc private func handleHudCheckBoxToggled() {
+        enableMetalHUD = hudCheckBox.state == .on
+    }
+
+    @objc private func handleOpenClassicWeb() {
+        guard let url = GameDefinition.mapleStoryClassic.loginURL else { return }
+        NSWorkspace.shared.open(url)
+        statusLabel.stringValue = "已開啟楓之谷：經典版登入網頁"
+    }
+
+    @objc private func handleClaimNexonPlug() {
+        let status = LSSetDefaultHandlerForURLScheme(
+            Self.nexonPlugScheme as NSString,
+            Self.beanfunOTPBundleID as NSString
+        )
+        if status == noErr {
+            statusLabel.stringValue = "已將 NexonPlug 設為由 Beanfun OTP 處理"
+        } else {
+            showError(BeanfunError.rejected("設定 NexonPlug 處理程式失敗（代碼 \(status)）"))
         }
     }
 
@@ -264,13 +438,58 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             guard accounts.indices.contains(selectedAccountIndex) else { return }
             fetchOTP(for: accounts[selectedAccountIndex])
         case .otp:
-            copyToPasteboard(otpValue)
+            if isValidExecutablePath(executablePath) {
+                launchViaCyder()
+            } else {
+                guard let otp = otpResult else { return }
+                copyToPasteboard(otp.value)
+                statusLabel.stringValue = "OTP 已複製"
+            }
+        case .classic:
+            chooseExecutable()
         }
     }
 
     @objc private func handleSecondary() {
-        guard screen == .otp, let account = selectedAccount else { return }
-        copyToPasteboard(account.id)
+        guard screen == .otp else { return }
+        if selectedGame?.id == GameDefinition.mapleStory.id {
+            launchViaMapleStoryLauncherWine()
+        } else if isValidExecutablePath(executablePath) {
+            guard let otp = otpResult else { return }
+            copyToPasteboard(otp.value)
+            statusLabel.stringValue = "OTP 已複製"
+        } else if let account = selectedAccount {
+            copyToPasteboard(account.id)
+            statusLabel.stringValue = "帳號已複製"
+        }
+    }
+
+    @objc private func handleCopyCmd() {
+        guard screen == .otp, let game = selectedGame, let account = selectedAccount, let otp = otpResult else { return }
+        let path = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else {
+            showError(BeanfunError.rejected("請先指定 \(game.executableName) 主程式位置"))
+            return
+        }
+        let cmd: String
+        if game.id == GameDefinition.mapleStory.id {
+            cmd = LaunchCommandBuilder.nexonWineCommand(
+                executablePath: path,
+                accountID: account.id,
+                otp: otp.value,
+                enableMetalHUD: enableMetalHUD
+            )
+        } else {
+            cmd = LaunchCommandBuilder.openCommand(
+                executablePath: path,
+                game: game,
+                accountID: account.id,
+                otp: otp.value,
+                enableMetalHUD: enableMetalHUD
+            )
+        }
+        copyToPasteboard(cmd)
+        statusLabel.stringValue = "啟動指令已複製"
     }
 
     @objc private func handleBack() {
@@ -283,11 +502,43 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         guard games.indices.contains(row) else { return }
         let game = games[row]
         selectedGame = game
+        loadExecutablePath(for: game)
         UserDefaults.standard.set(game.id, forKey: Self.lastGameIDKey)
-        startLogin()
+
+        if game.authFlow == .webNexonPlug {
+            screen = .classic
+            statusLabel.stringValue = "已選擇 \(game.name)"
+        } else {
+            startLogin()
+        }
     }
 
-    // MARK: - Login flow
+    private func chooseExecutable() {
+        guard let game = selectedGame else { return }
+        let panel = NSOpenPanel()
+        panel.title = "選擇 \(game.executableName)"
+        panel.message = "選擇要開啟的 \(game.name) 主程式 (.exe)"
+        panel.prompt = "選擇"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        if #available(macOS 11.0, *) {
+            panel.allowedContentTypes = [UTType(filenameExtension: "exe") ?? .data]
+        } else {
+            panel.allowedFileTypes = ["exe"]
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        saveExecutablePath(url.path, for: game)
+        statusLabel.stringValue = "已設定 \(game.name) 主程式位置"
+
+        if let tokens = pendingClassicPassargTokens {
+            pendingClassicPassargTokens = nil
+            launchClassic(passargTokens: tokens)
+        }
+    }
+
+    // MARK: - Login Flow
 
     private func startLogin() {
         guard let game = selectedGame else { return }
@@ -305,7 +556,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             case let .success(session):
                 self.imageView.image = session.image
                 self.qrSecondsRemaining = 60
-                self.qrStatusLabel.stringValue = "請使用 Beanfun App 掃描 QR Code（60 秒內）"
+                self.qrStatusLabel.stringValue = "請使用 Gama Play 掃描 QR Code（60 秒內）"
                 self.statusLabel.stringValue = "掃描 QR Code 登入 \(game.name)"
                 self.beginPolling()
             case let .failure(error):
@@ -339,7 +590,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             qrStatusLabel.stringValue = "QR Code 已逾時，請按「重新產生」"
             return
         }
-        qrStatusLabel.stringValue = "請使用 Beanfun App 掃描 QR Code（\(qrSecondsRemaining) 秒內）"
+        qrStatusLabel.stringValue = "請使用 Gama Play 掃描 QR Code（\(qrSecondsRemaining) 秒內）"
     }
 
     @objc private func pollTick() {
@@ -391,7 +642,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                 self.accounts = accounts
                 if accounts.count == 1 {
                     self.selectedAccountIndex = 0
-                    self.fetchOTP(for: accounts[0])
+                    self.fetchOTP(for: accounts[0], autoLaunch: true)
                 } else {
                     self.clearTableSelection()
                     self.statusLabel.stringValue = "選擇\(game.name)帳號"
@@ -405,7 +656,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         }
     }
 
-    private func fetchOTP(for account: GameAccount) {
+    private func fetchOTP(for account: GameAccount, autoLaunch: Bool = false) {
         guard let game = selectedGame else { return }
         statusLabel.stringValue = "取得\(account.displayName)的 OTP…"
         primaryButton.isEnabled = false
@@ -415,23 +666,245 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             switch result {
             case let .success(otp):
                 self.selectedAccount = account
-                self.otpValue = otp.value
+                self.otpResult = otp
                 self.accountField.stringValue = "\(account.displayName)（\(account.id)）"
                 self.otpField.stringValue = otp.value
                 self.statusLabel.stringValue = "\(account.displayName) 登入資訊"
                 self.screen = .otp
+
+                if autoLaunch, self.isValidExecutablePath(self.executablePath) {
+                    self.launchViaCyder()
+                }
             case let .failure(error):
                 self.showError(error)
             }
         }
     }
 
+    // MARK: - Game Launching Logic
+
+    private func runProcess(
+        launchPath: String,
+        arguments: [String],
+        environment: [String: String]? = nil,
+        standardError: Pipe? = nil,
+        terminationHandler: ((Process) -> Void)? = nil
+    ) throws {
+        let process = Process()
+        if let environment = environment {
+            process.environment = environment
+        }
+        if let standardError = standardError {
+            process.standardError = standardError
+        }
+        process.terminationHandler = terminationHandler
+        if #available(macOS 10.13, *) {
+            process.executableURL = URL(fileURLWithPath: launchPath)
+            process.arguments = arguments
+            try process.run()
+        } else {
+            process.launchPath = launchPath
+            process.arguments = arguments
+            process.launch()
+        }
+    }
+
+    private func launchViaCyder() {
+        guard let game = selectedGame, let account = selectedAccount, let otp = otpResult else { return }
+        let path = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidExecutablePath(path) else {
+            chooseExecutable()
+            return
+        }
+
+        var env = ProcessInfo.processInfo.environment
+        if enableMetalHUD {
+            env["MTL_HUD_ENABLED"] = "1"
+        }
+        let standardError = Pipe()
+        let args = game.openArguments(
+            executablePath: path,
+            accountID: account.id,
+            otp: otp.value,
+            enableMetalHUD: enableMetalHUD
+        )
+
+        statusLabel.stringValue = "正在啟動\(game.name)…"
+        do {
+            try runProcess(
+                launchPath: "/usr/bin/open",
+                arguments: args,
+                environment: env,
+                standardError: standardError,
+                terminationHandler: { [weak self] process in
+                    let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
+                    let errorText = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        if process.terminationStatus == 0 {
+                            self.statusLabel.stringValue = "已透過 Cyder 啟動\(game.name)"
+                        } else {
+                            let msg = errorText.flatMap { $0.isEmpty ? nil : $0 } ?? "open 結束代碼 \(process.terminationStatus)"
+                            self.showError(BeanfunError.rejected(msg))
+                        }
+                    }
+                }
+            )
+        } catch {
+            showError(error)
+        }
+    }
+
+    private func launchViaMapleStoryLauncherWine() {
+        guard let game = selectedGame, game.id == GameDefinition.mapleStory.id,
+              let account = selectedAccount, let otp = otpResult else { return }
+        let path = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidExecutablePath(path) else {
+            chooseExecutable()
+            return
+        }
+
+        let wineURL = MapleStoryWineLauncher.wineExecutableURL()
+        guard FileManager.default.isExecutableFile(atPath: wineURL.path) else {
+            showError(BeanfunError.rejected("找不到 MapleStory Launcher 的 Wine。請先安裝並開啟過 MapleStory Launcher。"))
+            return
+        }
+
+        let args = MapleStoryWineLauncher.arguments(executablePath: path, accountID: account.id, otp: otp.value)
+        let env = MapleStoryWineLauncher.processEnvironment(enableMetalHUD: enableMetalHUD)
+
+        statusLabel.stringValue = "正在以 MapleStory Launcher 啟動新楓之谷…"
+        do {
+            try runProcess(
+                launchPath: wineURL.path,
+                arguments: args,
+                environment: env
+            )
+            statusLabel.stringValue = "已透過 MapleStory Launcher 啟動新楓之谷"
+        } catch {
+            showError(error)
+        }
+    }
+
+    // MARK: - NexonPlug Scheme Handling
+
+    func handleOpenedURL(_ url: URL, fromColdStart: Bool = false) {
+        if fromColdStart {
+            quitAfterSuccessfulClassicLaunch = true
+        }
+        guard let parsed = NexonPlugURLParser.parse(url) else { return }
+
+        if NexonPlugURLParser.isMapleStoryClassic(gameCode: parsed.gameCode) {
+            handleClassicNexonPlug(parsed)
+        } else {
+            forwardNexonPlug(url)
+        }
+    }
+
+    private func handleClassicNexonPlug(_ parsed: NexonPlugURLParser.Parsed) {
+        guard !parsed.passargTokens.isEmpty else {
+            showError(BeanfunError.parse("NexonPlug 連結缺少 passarg，無法啟動經典版"))
+            return
+        }
+        let classic = GameDefinition.mapleStoryClassic
+        selectedGame = classic
+        loadExecutablePath(for: classic)
+        screen = .classic
+        pendingClassicPassargTokens = parsed.passargTokens
+
+        if !isValidExecutablePath(executablePath) {
+            chooseExecutable()
+        } else {
+            pendingClassicPassargTokens = nil
+            launchClassic(passargTokens: parsed.passargTokens)
+        }
+    }
+
+    private func launchClassic(passargTokens: [String]) {
+        let path = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidExecutablePath(path) else {
+            showError(BeanfunError.rejected("請先選擇 Maplestory_Classic.exe"))
+            return
+        }
+        var env = ProcessInfo.processInfo.environment
+        if enableMetalHUD {
+            env["MTL_HUD_ENABLED"] = "1"
+        }
+        let standardError = Pipe()
+        let args = NexonPlugURLParser.classicOpenArguments(
+            executablePath: path,
+            passargTokens: passargTokens,
+            enableMetalHUD: enableMetalHUD
+        )
+
+        statusLabel.stringValue = "正在啟動楓之谷：經典版…"
+        do {
+            try runProcess(
+                launchPath: "/usr/bin/open",
+                arguments: args,
+                environment: env,
+                standardError: standardError,
+                terminationHandler: { [weak self] process in
+                    let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
+                    let errorText = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        if process.terminationStatus == 0 {
+                            self.statusLabel.stringValue = "已透過 Cyder 啟動楓之谷：經典版"
+                            if self.quitAfterSuccessfulClassicLaunch {
+                                NSApp.terminate(nil)
+                            }
+                        } else {
+                            let msg = errorText.flatMap { $0.isEmpty ? nil : $0 } ?? "open 結束代碼 \(process.terminationStatus)"
+                            self.showError(BeanfunError.rejected(msg))
+                        }
+                    }
+                }
+            )
+        } catch {
+            showError(error)
+        }
+    }
+
+    private func forwardNexonPlug(_ url: URL) {
+        let plugPath = Self.officialNexonPlugAppPath
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: plugPath, isDirectory: &isDir) else {
+            showError(BeanfunError.rejected("找不到 NexonPlug.app，無法轉發其他遊戲的 NexonPlug 連結"))
+            return
+        }
+        do {
+            try runProcess(
+                launchPath: "/usr/bin/open",
+                arguments: ["-a", plugPath, url.absoluteString]
+            )
+            statusLabel.stringValue = "已將 NexonPlug 連結轉發給官方 NexonPlug"
+        } catch {
+            showError(error)
+        }
+    }
+
     // MARK: - Helpers
+
+    private func isValidExecutablePath(_ path: String) -> Bool {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && FileManager.default.fileExists(atPath: trimmed)
+    }
 
     private func copyToPasteboard(_ value: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
+    }
+
+    private func setSubtleButtonTitle(_ button: NSButton, title: String) {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        let attributes: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .font: NSFont.systemFont(ofSize: 12)
+        ]
+        button.attributedTitle = NSAttributedString(string: title, attributes: attributes)
     }
 
     private func showError(_ error: Error) {

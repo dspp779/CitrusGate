@@ -754,13 +754,15 @@ final class BeanfunClient {
             case let .failure(error):
                 self.finish(completion, .failure(error))
             case let .success(otpResponse):
-                self.fetchOTPFinish(otpResponse: otpResponse, completion: completion)
+                self.fetchOTPFinish(otpResponse: otpResponse, account: account, game: game, completion: completion)
             }
         }
     }
 
     private func fetchOTPFinish(
         otpResponse: HTTPResult,
+        account: GameAccount,
+        game: GameDefinition,
         completion: @escaping (Result<OTPResult, Error>) -> Void
     ) {
         guard let rawText = try? text(otpResponse.data) else {
@@ -798,9 +800,10 @@ final class BeanfunClient {
                 finish(completion, .failure(BeanfunError.parse("OTP 解密結果不是 UTF-8")))
                 return
             }
+            let commandLine = game.commandLine(accountID: account.id, otp: otp)
             log("  OTP 解密成功：\(otp.count) 字元")
             secret("  OTP=\(otp)")
-            finish(completion, .success(OTPResult(value: otp, retrievedAt: Date())))
+            finish(completion, .success(OTPResult(value: otp, retrievedAt: Date(), commandLine: commandLine)))
         } catch {
             finish(completion, .failure(error))
         }

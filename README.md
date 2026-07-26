@@ -1,6 +1,6 @@
 # Beanfun OTP for macOS
 
-本 repo 提供兩個 macOS 用戶端：**Beanfun OTP**（Modern，SwiftUI，macOS 13 以上，完整功能）與 **Beanfun OTP Legacy**（AppKit，macOS 10.12 以上，僅 QR 登入後複製 OTP）。Modern 版用 Gama Play 掃描 QR code 登入 Beanfun，選擇遊戲與帳號後取得 OTP。成品不依賴 Python、Homebrew、Node.js 或第三方套件。
+本 repo 提供兩個 macOS 用戶端：**Beanfun OTP**（Modern，SwiftUI，macOS 13 以上，完整功能）與 **Beanfun OTP Legacy**（AppKit，macOS 10.12 以上，經典 AppKit 介面，支援自動帶參啟動）。Modern 版用 Gama Play 掃描 QR code 登入 Beanfun，選擇遊戲與帳號後取得 OTP。成品不依賴 Python、Homebrew、Node.js 或第三方套件。
 
 目前支援 4 款可自動帶參/協定登入之服務：新楓之谷、楓之谷：經典版、新瑪奇與艾爾之光。爆爆王未納入，無命令列自動帶參功能之舊款遊戲已移除。
 
@@ -10,11 +10,11 @@
 | --- | --- | --- |
 | 系統需求 | macOS 13 以上 | macOS 10.12 以上（Intel） |
 | 架構 | Apple Silicon + Intel | 僅 Intel (x86_64) |
-| 功能 | 完整（含自動啟動遊戲、FPS 顯示、進階模式） | 精簡：QR 登入後複製 OTP |
+| 功能 | 完整（含 Wine 啟動、FPS 顯示、進階模式） | 經典 AppKit 介面（含主程式選擇、Cyder 啟動與經典版支援） |
 | 建置 | `./build.sh` | `./build-legacy.sh` |
 | 輸出 | `dist/Beanfun OTP.app` | `dist/Beanfun OTP Legacy.app` |
 
-10.12–12 請用 Legacy。13 以上請用一般版（最新版本為 `v0.4.0`）。Beanfun 登入協定若變更，兩個版本的 client 都需要同步更新。
+10.12–12 請用 Legacy。13 以上請用一般版（最新版本皆為 `v0.4.0`）。Beanfun 登入協定若變更，兩個版本的 client 都需要同步更新。
 
 以下「一般模式」與「進階模式」說明僅適用於 **Beanfun OTP**（Modern 版）。
 

@@ -12,7 +12,7 @@
 | --- | --- |
 | Beanfun OTP（本專案 Modern 版，macOS 13+） | QR 登入取得 OTP，並啟動遊戲 |
 | 美版 [MapleStory Launcher](https://www.nexon.com/maplestory/) | 跑新楓之谷的官方 OEM Wine（CrossOver 25／Wine 10）與 bottle |
-| [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)（可選） | 不想裝北美 Nexon Launcher 時，可用此分支版 Cyder 跑**新楓之谷**（oem25；**不能**開經典版） |
+| [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)（可選） | 不想裝北美 Nexon Launcher 時，可用此分支版 Cyder 跑**新楓之谷**（oem25；**不能**開經典版） |
 | [台灣官方新楓之谷主程式](https://maplestory.beanfun.com/download) | 下載 `MapleStory.exe`（手動下載可略過橘子遊戲管理器） |
 | Beanfun 帳號 | 登入憑證來源 |
 
@@ -23,7 +23,7 @@ Cyder 下載（經典版／正式版）：<https://github.com/dspp779/CyderBits/
 | 環境 | 新楓之谷 | 新楓之谷：經典版 |
 | --- | --- | --- |
 | **北美官方 MapleStory Launcher**（CrossOver 25／Wine 10） | 可用 | **不可用**（缺功能，例：`EventWriteEx`） |
-| **[Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)**（`v0.6.0-maplestory`，oem25） | 可用（可不裝 GMS Launcher） | **不可用**（oem25，缺 `EventWriteEx` 等） |
+| **[Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)**（`v0.7.0-maplestory`，oem25） | 可用（可不裝 GMS Launcher） | **不可用**（oem25，缺 `EventWriteEx` 等） |
 | **[Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest)** | **不行**（未含新楓之谷官方修補移植） | 可用（經典版請走此路徑） |
 
 經典版完整步驟見 [`docs/macos-player-guide-classic.md`](macos-player-guide-classic.md)。
@@ -63,9 +63,9 @@ Cyder 下載（經典版／正式版）：<https://github.com/dspp779/CyderBits/
 新楓之谷需要相容層。可選：
 
 - **A. 北美 MapleStory Launcher**（內建 CrossOver 25／Wine 10）→ Beanfun OTP 用「以 MapleStory Launcher 開啟」
-- **B. [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)**（`v0.6.0-maplestory`）→ 把 `MapleStory.exe`「打開方式」設成該 Cyder，再用「以 Cyder 開啟」
+- **B. [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)**（`v0.7.0-maplestory`）→ 把 `MapleStory.exe`「打開方式」設成該 Cyder，再用「以 Cyder 開啟」
 
-**請勿**用 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) 跑新楓之谷（尚未含官方修補移植）。經典版不要用北美 Launcher，也不要用 `v0.6.0-maplestory`（同為 oem25，缺 `EventWriteEx`）。
+**請勿**用 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) 跑新楓之谷（尚未含官方修補移植）。經典版不要用北美 Launcher，也不要用 `v0.7.0-maplestory`（同為 oem25，缺 `EventWriteEx`）。
 
 ### 1A. 安裝美版 MapleStory Launcher
 
@@ -87,7 +87,7 @@ ls "/Applications/MapleStory Launcher.app/Contents/SharedSupport/maplestoryna/Ma
 
 ### 1B. 安裝 Cyder 新楓之谷分支（可不裝 Launcher）
 
-1. 下載：[CyderBits `v0.6.0-maplestory`](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)
+1. 下載：[CyderBits `v0.7.0-maplestory`](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)
 2. 安裝後，在 Finder 對 `MapleStory.exe` 設「打開方式」為該 **Cyder**。
 3. 在 Beanfun OTP 選「以 Cyder 開啟」。
 
@@ -191,7 +191,7 @@ ls "$HOME/Documents/gamania Games/MapleStory/MapleStory.exe"
 
    - **以 MapleStory Launcher 開啟**：設定 Wine 環境後，直接執行 Launcher 內建 `wine`（`maplestory` bottle），**不會**走 `open`。需已完成步驟 1A。
    - **以 Cyder 開啟**：透過 macOS `open -n`，依 `.exe` 的「打開方式」啟動。  
-     請使用 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)（步驟 1B）；**正式版 Cyder 不能跑新楓之谷**。
+     請使用 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)（步驟 1B）；**正式版 Cyder 不能跑新楓之谷**。
 
    <img src="screenshots/citrusgate-3-service-account.png" alt="選擇帳號" width="480">
 
@@ -242,7 +242,7 @@ wine --bottle maplestory \
 
 ### 5.2 Cyder／`open`（需新楓之谷分支）
 
-請先安裝 [Cyder `v0.6.0-maplestory`](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)，並將 `MapleStory.exe` 的「打開方式」設為該 Cyder。**正式版不能跑新楓之谷。**
+請先安裝 [Cyder `v0.7.0-maplestory`](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)，並將 `MapleStory.exe` 的「打開方式」設為該 Cyder。**正式版不能跑新楓之谷。**
 
 ```sh
 open -n '/path/to/MapleStory.exe' --args \
@@ -265,7 +265,7 @@ open -n '/path/to/MapleStory.exe' --args \
 | Apple Silicon 打不開 x86 程式 | 未裝 Rosetta | 依系統提示安裝 Rosetta 2 |
 | 管理器裝完無法執行 | 缺少 .NET 6 | 回到安裝流程接受 .NET 元件，或再執行一次安裝程式補裝 |
 | 「以 MapleStory Launcher 開啟」失敗 | 未裝／未開過 Launcher | 完成步驟 1A，確認 `wine` 路徑存在；或改用步驟 1B（Cyder 新楓之谷分支） |
-| 「以 Cyder 開啟」失敗／進不了遊戲 | 用了正式版 Cyder，或未設打開方式 | 改裝 [`v0.6.0-maplestory`](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)，或改用「以 MapleStory Launcher 開啟」 |
+| 「以 Cyder 開啟」失敗／進不了遊戲 | 用了正式版 Cyder，或未設打開方式 | 改裝 [`v0.7.0-maplestory`](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)，或改用「以 MapleStory Launcher 開啟」 |
 | 想用 Launcher 或 Cyder 新楓之谷分支開經典版 | 皆為 oem25／CrossOver 25（Wine 10），缺 `EventWriteEx` 等 | 經典版請改用 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest)；見[經典版教學](macos-player-guide-classic.md) |
 
 ---
@@ -295,7 +295,7 @@ Bottle
 
 ## 免責
 
-- 本流程使用北美 MapleStory Launcher 內建 Wine（CrossOver 25／Wine 10）及／或 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)（oem25）執行 Windows 版新楓之谷客戶端，可能違反遊戲服務條款，也有帳號風險。
+- 本流程使用北美 MapleStory Launcher 內建 Wine（CrossOver 25／Wine 10）及／或 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)（oem25）執行 Windows 版新楓之谷客戶端，可能違反遊戲服務條款，也有帳號風險。
 - **Cyder 正式版**不能跑新楓之谷；**北美 Launcher 與 Cyder 新楓之谷分支都不能開經典版**（缺 `EventWriteEx` 等），見[經典版教學](macos-player-guide-classic.md)。
 - Nexon、遊戲橘子、Beanfun 皆未為此 macOS 玩法提供官方支援。
 - OTP、Cookie、帳號 ID 屬敏感資料，請勿貼到公開頻道或提交到任何版本庫。

@@ -30,7 +30,7 @@ App 每次啟動預設使用一般模式。先從附有官方縮圖的精簡清�
 新楓之谷在一般模式提供「以 Cyder 開啟」與「以 MapleStory Launcher 開啟」。新楓之谷可選：
 
 - **MapleStory Launcher**（內建 CrossOver 25／Wine 10，`maplestory` bottle，帶入 `--wait-children` 與 `--enable-alt-loader macdrv`）
-- 或不想裝 GMS Launcher 時，改用 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)（`v0.6.0-maplestory`）+「以 Cyder 開啟」
+- 或不想裝 GMS Launcher 時，改用 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)（`v0.7.0-maplestory`）+「以 Cyder 開啟」
 
 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) **不能**跑新楓之谷。啟動後按鈕會暫時停用約 10 秒並顯示狀態。
 

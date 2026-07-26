@@ -23,7 +23,7 @@ Cyder 下載：<https://github.com/dspp779/CyderBits/releases/latest>
 
 請使用 **[Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest)** 搭配 `open -n`。
 
-**不要**用北美 MapleStory Launcher，也**不要**用 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.6.0-maplestory)（`v0.6.0-maplestory` 為 oem25，同樣缺 `EventWriteEx`）。
+**不要**用北美 MapleStory Launcher，也**不要**用 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)（`v0.7.0-maplestory` 為 oem25，同樣缺 `EventWriteEx`）。
 
 新楓之谷（非經典）則可選北美 Launcher，或可選該 Cyder 新楓之谷分支（不想裝 GMS Launcher 時）。**Cyder 正式版不能跑新楓之谷。** 見 [`docs/macos-player-guide.md`](macos-player-guide.md)。
 
@@ -40,7 +40,7 @@ Cyder 下載：<https://github.com/dspp779/CyderBits/releases/latest>
 ## 步驟 1：準備環境
 
 1. 下載並安裝 **Cyder 正式版**：<https://github.com/dspp779/CyderBits/releases/latest>  
-   （不要用 `v0.6.0-maplestory` 開經典版。）
+   （不要用 `v0.7.0-maplestory` 開經典版。）
 2. 取得 `Maplestory_Classic.exe`，放到好找的路徑（例如文件下自訂資料夾）。
 3. 建議在 Finder 對該 `.exe` 按「取得資訊」→「打開方式」選 **Cyder**。
 4. 準備 **Beanfun OTP**（Modern，macOS 13+；見專案 `README.md`／Release）。

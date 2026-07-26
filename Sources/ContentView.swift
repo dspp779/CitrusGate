@@ -163,8 +163,17 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             }
-            Button("選擇其他遊戲") { model.showGamePicker() }
-                .buttonStyle(.link)
+            VStack(spacing: 3) {
+                if let game = model.selectedGame {
+                    Button("選擇\(game.name)主程式…") { model.chooseExecutable() }
+                        .buttonStyle(.link)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Button("選擇其他遊戲") { model.showGamePicker() }
+                    .buttonStyle(.link)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -296,7 +305,15 @@ struct ContentView: View {
                     .controlSize(.large)
                     .disabled(model.isBusy)
                 }
-                Button("選擇其他遊戲") { model.showGamePicker() }
+                VStack(spacing: 3) {
+                    if let game = model.selectedGame {
+                        Button("選擇\(game.name)主程式…") { model.chooseExecutable() }
+                        Text("·")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("選擇其他遊戲") { model.showGamePicker() }
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 240)
             .padding()
@@ -437,8 +454,17 @@ struct ContentView: View {
                     }
                 }
 
-                Button("選擇其他遊戲") { model.showGamePicker() }
-                    .buttonStyle(.link)
+                VStack(spacing: 3) {
+                    if let game = model.selectedGame {
+                        Button("選擇\(game.name)主程式…") { model.chooseExecutable() }
+                            .buttonStyle(.link)
+                        Text("·")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("選擇其他遊戲") { model.showGamePicker() }
+                        .buttonStyle(.link)
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 200)
             .padding()
@@ -481,7 +507,15 @@ struct ContentView: View {
                     }
                 }
                 HStack {
-                    Button("選擇其他遊戲") { model.showGamePicker() }
+                    VStack(alignment: .leading, spacing: 3) {
+                        if let game = model.selectedGame {
+                            Button("選擇\(game.name)主程式…") { model.chooseExecutable() }
+                            Text("·")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("選擇其他遊戲") { model.showGamePicker() }
+                    }
                     Spacer()
                     Button {
                         model.retrieveOTP()
@@ -597,8 +631,19 @@ struct ContentView: View {
                         }
                         .disabled(!model.canCopyLaunchCommand)
                         Spacer()
-                        Button("選擇其他遊戲") { model.showGamePicker() }
-                        Button("選擇其他帳號") { model.chooseAnotherAccount() }
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Button("選擇\(model.selectedGame?.name ?? "遊戲")主程式…") { model.chooseExecutable() }
+                            Text("·")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            HStack(spacing: 6) {
+                                Button("選擇其他帳號") { model.chooseAnotherAccount() }
+                                Text("·")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Button("選擇其他遊戲") { model.showGamePicker() }
+                            }
+                        }
                     }
                 }
                 .padding(10)

@@ -21,13 +21,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var didScheduleColdStartWindowEnd = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let removedMenus = Set(["Edit", "View", "Window", "編輯", "顯示方式", "視窗"])
-        DispatchQueue.main.async {
-            guard let mainMenu = NSApp.mainMenu else { return }
-            mainMenu.items
-                .filter { removedMenus.contains($0.title) }
-                .forEach { mainMenu.removeItem($0) }
-        }
+        removeForbiddenMenus()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleMenuUpdate),
+            name: NSMenu.didAddItemNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleMenuUpdate),
+            name: NSApplication.didUpdateNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleMenuUpdate),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleMenuUpdate() {
+        removeForbiddenMenus()
+    }
+
+    private func removeForbiddenMenus() {
+        let removedMenus = Set(["Edit", "View", "Window", "編輯", "顯示方式", "視窗", "遊戲", "Game"])
+        guard let mainMenu = NSApp.mainMenu else { return }
+        mainMenu.items
+            .filter { removedMenus.contains($0.title) }
+            .forEach { mainMenu.removeItem($0) }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -75,6 +99,8 @@ struct BeanfunOTPApp: App {
         .windowResizability(.contentSize)
         .commandsRemoved()
         .commands {
+            CommandGroup(replacing: .sidebar) { }
+            CommandGroup(replacing: .toolbar) { }
             CommandGroup(after: .appInfo) {
                 Button("關閉並結束 Beanfun OTP") {
                     NSApp.terminate(nil)
@@ -99,24 +125,6 @@ struct BeanfunOTPApp: App {
                         }
                     }
                 }
-            }
-            CommandMenu("遊戲") {
-                ForEach(model.games) { game in
-                    Button {
-                        model.selectGame(game)
-                    } label: {
-                        if model.selectedGameID == game.id {
-                            Label(game.name, systemImage: "checkmark")
-                        } else {
-                            Text(game.name)
-                        }
-                    }
-                }
-                Divider()
-                Button("選擇\(model.selectedGame?.name ?? "遊戲")主程式…") {
-                    model.chooseExecutable()
-                }
-                .disabled(model.selectedGame == nil)
             }
         }
     }

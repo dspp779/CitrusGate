@@ -202,7 +202,7 @@ final class AppModel: ObservableObject {
             return
         }
         guard game.usesBeanfunQR else {
-            errorMessage = "楓之谷：經典版請使用網頁登入"
+            errorMessage = "新楓之谷：經典版請使用網頁登入"
             screen = .classic
             return
         }
@@ -684,7 +684,7 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 self.isBusy = false
                 if process.terminationStatus == 0 {
-                    self.statusMessage = "已透過 Cyder 啟動楓之谷：經典版"
+                    self.statusMessage = "已透過 Cyder 啟動新楓之谷：經典版"
                     self.appendLog("執行 open -n：classic executable=\(path) args=\(passargTokens.joined(separator: " "))")
                     if self.quitAfterSuccessfulClassicLaunch {
                         NSApp.terminate(nil)
@@ -697,7 +697,7 @@ final class AppModel: ObservableObject {
             }
         }
         isBusy = true
-        statusMessage = "正在以 open -n 透過 Cyder 啟動楓之谷：經典版…"
+        statusMessage = "正在以 open -n 透過 Cyder 啟動新楓之谷：經典版…"
         do {
             try process.run()
         } catch {

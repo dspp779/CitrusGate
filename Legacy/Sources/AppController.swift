@@ -412,7 +412,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     @objc private func handleOpenClassicWeb() {
         guard let url = GameDefinition.mapleStoryClassic.loginURL else { return }
         NSWorkspace.shared.open(url)
-        statusLabel.stringValue = "已開啟楓之谷：經典版登入網頁"
+        statusLabel.stringValue = "已開啟新楓之谷：經典版登入網頁"
     }
 
     @objc private func handleClaimNexonPlug() {
@@ -837,7 +837,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             enableMetalHUD: enableMetalHUD
         )
 
-        statusLabel.stringValue = "正在啟動楓之谷：經典版…"
+        statusLabel.stringValue = "正在啟動新楓之谷：經典版…"
         do {
             try runProcess(
                 launchPath: "/usr/bin/open",
@@ -850,7 +850,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                     DispatchQueue.main.async {
                         guard let self = self else { return }
                         if process.terminationStatus == 0 {
-                            self.statusLabel.stringValue = "已透過 Cyder 啟動楓之谷：經典版"
+                            self.statusLabel.stringValue = "已透過 Cyder 啟動新楓之谷：經典版"
                             if self.quitAfterSuccessfulClassicLaunch {
                                 NSApp.terminate(nil)
                             }

@@ -120,7 +120,7 @@ struct GameDefinition: Identifiable, Hashable {
 
     static let mapleStoryClassic = GameDefinition(
         id: "maplestory-classic",
-        name: "楓之谷：經典版",
+        name: "新楓之谷：經典版",
         serviceCode: "2982",
         serviceRegion: "CL",
         imageName: "maplestory-classic.jpg",

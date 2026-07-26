@@ -163,17 +163,7 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             }
-            VStack(spacing: 3) {
-                if let game = model.selectedGame {
-                    Button("選擇\(game.name)主程式…") { model.chooseExecutable() }
-                        .buttonStyle(.link)
-                    Text("·")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Button("選擇其他遊戲") { model.showGamePicker() }
-                    .buttonStyle(.link)
-            }
+            ExecutablePickerSection(model: model)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -252,11 +242,6 @@ struct ContentView: View {
             .buttonStyle(.link)
             Toggle("顯示遊戲流暢度 (FPS)", isOn: $model.enableMetalHUD)
                 .font(.caption)
-            Text(model.executablePath.isEmpty ? "尚未選擇 Maplestory_Classic.exe" : model.executablePath)
-                .font(.caption)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-            Button("選擇主程式…") { model.chooseExecutable() }
             Button {
                 model.openClassicLoginPage()
             } label: {
@@ -271,17 +256,7 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-            VStack(spacing: 3) {
-                if let game = model.selectedGame {
-                    Button("選擇\(game.name)主程式…") { model.chooseExecutable() }
-                        .buttonStyle(.link)
-                    Text("·")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Button("選擇其他遊戲") { model.showGamePicker() }
-                    .buttonStyle(.link)
-            }
+            ExecutablePickerSection(model: model)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -316,15 +291,7 @@ struct ContentView: View {
                     .controlSize(.large)
                     .disabled(model.isBusy)
                 }
-                VStack(spacing: 3) {
-                    if let game = model.selectedGame {
-                        Button("選擇\(game.name)主程式…") { model.chooseExecutable() }
-                        Text("·")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    Button("選擇其他遊戲") { model.showGamePicker() }
-                }
+                ExecutablePickerSection(model: model)
             }
             .frame(maxWidth: .infinity, minHeight: 240)
             .padding()
@@ -465,17 +432,7 @@ struct ContentView: View {
                     }
                 }
 
-                VStack(spacing: 3) {
-                    if let game = model.selectedGame {
-                        Button("選擇\(game.name)主程式…") { model.chooseExecutable() }
-                            .buttonStyle(.link)
-                        Text("·")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    Button("選擇其他遊戲") { model.showGamePicker() }
-                        .buttonStyle(.link)
-                }
+                ExecutablePickerSection(model: model)
             }
             .frame(maxWidth: .infinity, minHeight: 200)
             .padding()
@@ -518,15 +475,7 @@ struct ContentView: View {
                     }
                 }
                 HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        if let game = model.selectedGame {
-                            Button("選擇\(game.name)主程式…") { model.chooseExecutable() }
-                            Text("·")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        Button("選擇其他遊戲") { model.showGamePicker() }
-                    }
+                    ExecutablePickerSection(model: model)
                     Spacer()
                     Button {
                         model.retrieveOTP()
@@ -643,16 +592,22 @@ struct ContentView: View {
                         .disabled(!model.canCopyLaunchCommand)
                         Spacer()
                         VStack(alignment: .trailing, spacing: 3) {
-                            Button("選擇\(model.selectedGame?.name ?? "遊戲")主程式…") { model.chooseExecutable() }
-                            Text("·")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            if let game = model.selectedGame {
+                                Button("選擇「\(game.name)」主程式…") { model.chooseExecutable() }
+                                    .buttonStyle(.link)
+                                Text("·")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                             HStack(spacing: 6) {
                                 Button("選擇其他帳號") { model.chooseAnotherAccount() }
+                                    .buttonStyle(.link)
                                 Text("·")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                 Button("選擇其他遊戲") { model.showGamePicker() }
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -743,6 +698,38 @@ struct ContentView: View {
     }
 }
 
+private struct ExecutablePickerSection: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(spacing: 4) {
+            if let game = model.selectedGame {
+                Text(model.executablePath.isEmpty
+                     ? "（未選擇「\(game.name)」主程式）"
+                     : "主程式：\(model.executablePath)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+
+                Button("選擇「\(game.name)」主程式…") {
+                    model.chooseExecutable()
+                }
+                .buttonStyle(.link)
+
+                Text("·")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Button("選擇其他遊戲") {
+                model.showGamePicker()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+    }
+}
+
 private struct GameArtwork: View {
     let game: GameDefinition
 
@@ -798,15 +785,6 @@ private struct FixedWindowConfigurator: NSViewRepresentable {
             }
             window.backgroundColor = NSColor.windowBackgroundColor
             window.contentMinSize = contentSize
-            window.contentMaxSize = contentSize
-            window.standardWindowButton(.zoomButton)?.isEnabled = false
-            window.collectionBehavior.remove(.fullScreenPrimary)
-            window.collectionBehavior.insert(.fullScreenNone)
-            let current = window.contentView?.frame.size ?? .zero
-            if abs(current.width - contentSize.width) > 0.5
-                || abs(current.height - contentSize.height) > 0.5 {
-                window.setContentSize(contentSize)
-            }
         }
     }
 }

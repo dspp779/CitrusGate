@@ -40,7 +40,6 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             updateExePathLabel()
         }
     }
-    private var pendingClassicPassargTokens: [String]?
 
     // UI Controls
     private let statusLabel = NSTextField(wrappingLabelWithString: "選擇遊戲")

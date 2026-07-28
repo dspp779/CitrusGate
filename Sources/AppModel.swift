@@ -25,6 +25,24 @@ final class AppModel: ObservableObject {
     private static let nexonPlugScheme = "NexonPlug"
     private static let beanfunOTPBundleID = "local.ogom.beanfunotp"
 
+    enum QuarantineStatus: Equatable {
+        case notQuarantined
+        case quarantined
+    }
+
+    nonisolated static func quarantineStatus(
+        forExtendedAttributes names: [String]
+    ) -> QuarantineStatus {
+        names.contains("com.apple.quarantine") ? .quarantined : .notQuarantined
+    }
+
+    nonisolated static func quarantineRemovalErrorDescription(
+        path: String,
+        underlying: String
+    ) -> String {
+        "無法解除檔案的 macOS quarantine，請檢查檔案權限後再試一次：\(path)\n\(underlying)"
+    }
+
     @Published private(set) var mode: AppMode = .defaultMode
     @Published var screen: AppScreen = .games
     @Published private(set) var selectedGameID: String?

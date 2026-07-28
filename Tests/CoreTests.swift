@@ -15,7 +15,10 @@ enum CoreTests {
         try testNexonPlugURLParser()
         try testClassicOpenArguments()
         try testMapleStoryWineLauncher()
-        print("CoreTests: 12 tests passed")
+        try testQuarantineStatusWithoutAttribute()
+        try testQuarantineStatusWithAttribute()
+        try testQuarantineRemovalErrorDescription()
+        print("CoreTests: 15 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -273,6 +276,33 @@ enum CoreTests {
 
         let envWithHUD = MapleStoryWineLauncher.processEnvironment(enableMetalHUD: true)
         try expect(envWithHUD["MTL_HUD_ENABLED"] == "1", "MTL_HUD_ENABLED when true")
+    }
+
+    private static func testQuarantineStatusWithoutAttribute() throws {
+        let status = AppModel.quarantineStatus(forExtendedAttributes: [
+            "com.apple.metadata:kMDItemWhereFroms",
+            "com.apple.lastuseddate#PS",
+        ])
+        try expect(status == .notQuarantined, "missing quarantine attribute should be not quarantined")
+    }
+
+    private static func testQuarantineStatusWithAttribute() throws {
+        let status = AppModel.quarantineStatus(forExtendedAttributes: [
+            "com.apple.quarantine",
+            "com.apple.metadata:kMDItemWhereFroms",
+        ])
+        try expect(status == .quarantined, "quarantine attribute should be detected")
+    }
+
+    private static func testQuarantineRemovalErrorDescription() throws {
+        let message = AppModel.quarantineRemovalErrorDescription(
+            path: "/Games/Maple Story/MapleStory.exe",
+            underlying: "Operation not permitted"
+        )
+        try expect(
+            message == "無法解除檔案的 macOS quarantine，請檢查檔案權限後再試一次：/Games/Maple Story/MapleStory.exe\nOperation not permitted",
+            "quarantine removal error copy mismatch"
+        )
     }
 
     private static func testClassicOpenArguments() throws {

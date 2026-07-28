@@ -214,8 +214,6 @@ enum OpenLauncher: Equatable {
     case cyder
     case cyderMapleStoryOEM
 
-    static let cyderApplicationName = "Cyder"
-    static let cyderMapleStoryOEMApplicationName = "Cyder MapleStory OEM"
     static let cyderBundleIdentifier = "local.cyder.app"
     static let cyderMapleStoryOEMBundleIdentifier = "local.cyder.maplestory-oem25"
 
@@ -228,9 +226,9 @@ enum OpenLauncher: Equatable {
         case .defaultApplication:
             return []
         case .cyder:
-            return ["-a", Self.cyderApplicationName]
+            return ["-b", Self.cyderBundleIdentifier]
         case .cyderMapleStoryOEM:
-            return ["-a", Self.cyderMapleStoryOEMApplicationName]
+            return ["-b", Self.cyderMapleStoryOEMBundleIdentifier]
         }
     }
 }
@@ -270,9 +268,9 @@ enum LaunchCommandBuilder {
         case .defaultApplication:
             applicationFlag = ""
         case .cyder:
-            applicationFlag = "-a \(shellQuote(OpenLauncher.cyderApplicationName)) "
+            applicationFlag = "-b \(shellQuote(OpenLauncher.cyderBundleIdentifier)) "
         case .cyderMapleStoryOEM:
-            applicationFlag = "-a \(shellQuote(OpenLauncher.cyderMapleStoryOEMApplicationName)) "
+            applicationFlag = "-b \(shellQuote(OpenLauncher.cyderMapleStoryOEMBundleIdentifier)) "
         }
         if args.isEmpty {
             return "open -n \(applicationFlag)\(quotedPath)"

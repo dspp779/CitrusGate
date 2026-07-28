@@ -142,7 +142,7 @@ enum CoreTests {
             launcher: .cyderMapleStoryOEM
         )
         try expect(
-            cyderCommand == "open -n -a 'Cyder MapleStory OEM' '/Games/Maple Story/MapleStory.exe' --args tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678",
+            cyderCommand == "open -n -b 'local.cyder.maplestory-oem25' '/Games/Maple Story/MapleStory.exe' --args tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678",
             "MapleStory Cyder OEM open command mismatch"
         )
 
@@ -154,7 +154,7 @@ enum CoreTests {
             launcher: .cyder
         )
         try expect(
-            standardCyderCommand == "open -n -a 'Cyder' '/Games/mabinogi.exe' --args /N:A2ACCOUNT /V:OTP123 /T:gamania",
+            standardCyderCommand == "open -n -b 'local.cyder.app' '/Games/mabinogi.exe' --args /N:A2ACCOUNT /V:OTP123 /T:gamania",
             "standard Cyder open command mismatch"
         )
 
@@ -349,8 +349,8 @@ enum CoreTests {
         )
         try expect(mapleStoryArgs == [
             "-n",
-            "-a",
-            "Cyder MapleStory OEM",
+            "-b",
+            "local.cyder.maplestory-oem25",
             "/Games/MapleStory.exe",
             "--args",
             "tw.login.maplestory.beanfun.com",
@@ -368,8 +368,8 @@ enum CoreTests {
         )
         try expect(cyderArgs == [
             "-n",
-            "-a",
-            "Cyder",
+            "-b",
+            "local.cyder.app",
             "/Games/Maplestory_Classic.exe",
         ], "Classic Cyder argv")
     }

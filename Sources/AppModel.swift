@@ -438,6 +438,13 @@ final class AppModel: ObservableObject {
         }
         guard let (path, account, otp) = validatedLaunchTarget(for: game) else { return }
 
+        do {
+            try clearQuarantineIfNeeded(at: path)
+        } catch {
+            present(error)
+            return
+        }
+
         launchedAccountID = nil
         beginLaunchUI()
 
@@ -680,6 +687,12 @@ final class AppModel: ObservableObject {
             errorMessage = "請先選擇 Maplestory_Classic.exe"
             return
         }
+        do {
+            try clearQuarantineIfNeeded(at: path)
+        } catch {
+            present(error)
+            return
+        }
         let process = Process()
         var env = ProcessInfo.processInfo.environment
         if enableMetalHUD {
@@ -751,6 +764,63 @@ final class AppModel: ObservableObject {
     /// a stale/removed path must be treated the same as no path at all.
     private func isValidExecutablePath(_ path: String) -> Bool {
         !path.isEmpty && FileManager.default.fileExists(atPath: path)
+    }
+
+    /// Clears `com.apple.quarantine` only when present, immediately before an
+    /// `open`-based launch. Uses Darwin xattr APIs because Foundation's
+    /// `URL.fileExtendedAttributesKey` / `removeExtendedAttribute(forName:)`
+    /// are unavailable on this toolchain.
+    private func clearQuarantineIfNeeded(at path: String) throws {
+        let names = try extendedAttributeNames(at: path)
+        guard Self.quarantineStatus(forExtendedAttributes: names) == .quarantined else {
+            return
+        }
+
+        do {
+            try removeExtendedAttribute("com.apple.quarantine", at: path)
+            appendLog("已解除 quarantine：\(path)")
+        } catch {
+            let detail = (error as NSError).localizedDescription
+            throw BeanfunError.rejected(
+                Self.quarantineRemovalErrorDescription(path: path, underlying: detail)
+            )
+        }
+    }
+
+    private func extendedAttributeNames(at path: String) throws -> [String] {
+        let length = listxattr(path, nil, 0, 0)
+        guard length >= 0 else {
+            throw posixError(errno, path: path)
+        }
+        guard length > 0 else { return [] }
+
+        var buffer = [CChar](repeating: 0, count: length)
+        let result = listxattr(path, &buffer, buffer.count, 0)
+        guard result >= 0 else {
+            throw posixError(errno, path: path)
+        }
+
+        return Data(bytes: buffer, count: result)
+            .split(separator: 0)
+            .compactMap { String(data: Data($0), encoding: .utf8) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func removeExtendedAttribute(_ name: String, at path: String) throws {
+        if removexattr(path, name, 0) != 0 {
+            throw posixError(errno, path: path)
+        }
+    }
+
+    private func posixError(_ code: Int32, path: String) -> NSError {
+        NSError(
+            domain: NSPOSIXErrorDomain,
+            code: Int(code),
+            userInfo: [
+                NSLocalizedDescriptionKey: String(cString: strerror(code)),
+                NSFilePathErrorKey: path,
+            ]
+        )
     }
 
     private func executablePathKey(for game: GameDefinition) -> String {

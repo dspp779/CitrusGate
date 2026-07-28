@@ -40,7 +40,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             updateExePathLabel()
         }
     }
-    private var enableMetalHUD: Bool = false
+    private var pendingClassicPassargTokens: [String]?
 
     // UI Controls
     private let statusLabel = NSTextField(wrappingLabelWithString: "選擇遊戲")
@@ -52,7 +52,6 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     // Executable path & settings UI
     private let exePathLabel = NSTextField(wrappingLabelWithString: "")
     private let chooseExeButton = NSButton(title: "選擇主程式…", target: nil, action: nil)
-    private let hudCheckBox = NSButton(checkboxWithTitle: "顯示遊戲流暢度 (FPS)", target: nil, action: nil)
     private var exeContainer: NSStackView!
 
     // Classic Mode UI
@@ -70,6 +69,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     // Action Buttons
     private let primaryButton = NSButton(title: "下一步", target: nil, action: nil)
     private let secondaryButton = NSButton(title: "複製帳號", target: nil, action: nil)
+    private let wineLaunchButton = NSButton(title: "以 Launcher 開啟", target: nil, action: nil)
     private let copyCmdButton = NSButton(title: "複製指令", target: nil, action: nil)
     private let backButton = NSButton(title: "選擇其他遊戲", target: nil, action: nil)
 
@@ -132,11 +132,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         chooseExeButton.target = self
         chooseExeButton.action = #selector(handleChooseExecutable)
 
-        hudCheckBox.state = .off
-        hudCheckBox.target = self
-        hudCheckBox.action = #selector(handleHudCheckBoxToggled)
-
-        exeContainer = NSStackView(views: [exePathLabel, chooseExeButton, hudCheckBox])
+        exeContainer = NSStackView(views: [exePathLabel, chooseExeButton])
         exeContainer.orientation = .vertical
         exeContainer.alignment = .centerX
         exeContainer.spacing = 6
@@ -202,6 +198,10 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         secondaryButton.target = self
         secondaryButton.action = #selector(handleSecondary)
 
+        wineLaunchButton.bezelStyle = .rounded
+        wineLaunchButton.target = self
+        wineLaunchButton.action = #selector(handleWineLaunch)
+
         copyCmdButton.bezelStyle = .rounded
         copyCmdButton.target = self
         copyCmdButton.action = #selector(handleCopyCmd)
@@ -211,7 +211,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         backButton.action = #selector(handleBack)
         setSubtleButtonTitle(backButton, title: "‹ 選擇其他遊戲")
 
-        let buttonRow = NSStackView(views: [primaryButton, secondaryButton, copyCmdButton])
+        let buttonRow = NSStackView(views: [primaryButton, secondaryButton, wineLaunchButton, copyCmdButton])
         buttonRow.orientation = .horizontal
         buttonRow.spacing = 10
         buttonRow.distribution = .fillEqually
@@ -274,36 +274,45 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             primaryButton.title = "下一步"
             primaryButton.isEnabled = tableView.selectedRow >= 0
             secondaryButton.isHidden = true
+            wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
             backButton.isHidden = true
         case .qr:
             primaryButton.title = "重新產生"
             primaryButton.isEnabled = true
             secondaryButton.isHidden = true
+            wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
             backButton.isHidden = false
         case .accounts:
             primaryButton.title = "取得 OTP"
             primaryButton.isEnabled = selectedAccountIndex >= 0
             secondaryButton.isHidden = true
+            wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
             backButton.isHidden = false
         case .otp:
             if selectedGame?.id == GameDefinition.mapleStory.id {
-                primaryButton.title = "以 Cyder 開啟"
+                primaryButton.title = "開啟"
                 primaryButton.isEnabled = isValidExecutablePath(executablePath)
-                secondaryButton.title = "以 Maple Launcher 開啟"
+                secondaryButton.title = "以 Cyder 開啟"
                 secondaryButton.isHidden = false
+                secondaryButton.isEnabled = isValidExecutablePath(executablePath)
+                wineLaunchButton.isHidden = false
+                wineLaunchButton.isEnabled = isValidExecutablePath(executablePath)
             } else if isValidExecutablePath(executablePath) {
-                primaryButton.title = "開啟遊戲"
+                primaryButton.title = "開啟"
                 primaryButton.isEnabled = true
-                secondaryButton.title = "複製 OTP"
+                secondaryButton.title = "以 Cyder 開啟"
                 secondaryButton.isHidden = false
+                secondaryButton.isEnabled = true
+                wineLaunchButton.isHidden = true
             } else {
                 primaryButton.title = "複製 OTP"
                 primaryButton.isEnabled = true
                 secondaryButton.title = "複製帳號"
                 secondaryButton.isHidden = false
+                wineLaunchButton.isHidden = true
             }
             copyCmdButton.isHidden = false
             backButton.isHidden = false
@@ -311,6 +320,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             primaryButton.title = "選擇主程式…"
             primaryButton.isEnabled = true
             secondaryButton.isHidden = true
+            wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
             backButton.isHidden = false
         }
@@ -405,10 +415,6 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         chooseExecutable()
     }
 
-    @objc private func handleHudCheckBoxToggled() {
-        enableMetalHUD = hudCheckBox.state == .on
-    }
-
     @objc private func handleOpenClassicWeb() {
         guard let url = GameDefinition.mapleStoryClassic.loginURL else { return }
         NSWorkspace.shared.open(url)
@@ -439,7 +445,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             fetchOTP(for: accounts[selectedAccountIndex])
         case .otp:
             if isValidExecutablePath(executablePath) {
-                launchViaCyder()
+                launchViaOpen()
             } else {
                 guard let otp = otpResult else { return }
                 copyToPasteboard(otp.value)
@@ -452,16 +458,20 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     @objc private func handleSecondary() {
         guard screen == .otp else { return }
-        if selectedGame?.id == GameDefinition.mapleStory.id {
-            launchViaMapleStoryLauncherWine()
-        } else if isValidExecutablePath(executablePath) {
-            guard let otp = otpResult else { return }
+        if isValidExecutablePath(executablePath), let game = selectedGame {
+            launchViaOpen(launcher: .cyder(for: game))
+        } else if let otp = otpResult {
             copyToPasteboard(otp.value)
             statusLabel.stringValue = "OTP 已複製"
         } else if let account = selectedAccount {
             copyToPasteboard(account.id)
             statusLabel.stringValue = "帳號已複製"
         }
+    }
+
+    @objc private func handleWineLaunch() {
+        guard screen == .otp else { return }
+        launchViaMapleStoryLauncherWine()
     }
 
     @objc private func handleCopyCmd() {
@@ -476,16 +486,14 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             cmd = LaunchCommandBuilder.nexonWineCommand(
                 executablePath: path,
                 accountID: account.id,
-                otp: otp.value,
-                enableMetalHUD: enableMetalHUD
+                otp: otp.value
             )
         } else {
             cmd = LaunchCommandBuilder.openCommand(
                 executablePath: path,
                 game: game,
                 accountID: account.id,
-                otp: otp.value,
-                enableMetalHUD: enableMetalHUD
+                otp: otp.value
             )
         }
         copyToPasteboard(cmd)
@@ -673,7 +681,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                 self.screen = .otp
 
                 if autoLaunch, self.isValidExecutablePath(self.executablePath) {
-                    self.launchViaCyder()
+                    self.launchViaOpen()
                 }
             case let .failure(error):
                 self.showError(error)
@@ -709,7 +717,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         }
     }
 
-    private func launchViaCyder() {
+    private func launchViaOpen(launcher: OpenLauncher = .defaultApplication) {
         guard let game = selectedGame, let account = selectedAccount, let otp = otpResult else { return }
         let path = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isValidExecutablePath(path) else {
@@ -717,24 +725,24 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             return
         }
 
-        var env = ProcessInfo.processInfo.environment
-        if enableMetalHUD {
-            env["MTL_HUD_ENABLED"] = "1"
-        }
         let standardError = Pipe()
         let args = game.openArguments(
             executablePath: path,
             accountID: account.id,
             otp: otp.value,
-            enableMetalHUD: enableMetalHUD
+            launcher: launcher
         )
 
-        statusLabel.stringValue = "正在啟動\(game.name)…"
+        switch launcher {
+        case .defaultApplication:
+            statusLabel.stringValue = "正在開啟\(game.name)…"
+        case .cyder, .cyderMapleStoryOEM:
+            statusLabel.stringValue = "正在以 Cyder 開啟\(game.name)…"
+        }
         do {
             try runProcess(
                 launchPath: "/usr/bin/open",
                 arguments: args,
-                environment: env,
                 standardError: standardError,
                 terminationHandler: { [weak self] process in
                     let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
@@ -742,7 +750,8 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                     DispatchQueue.main.async {
                         guard let self = self else { return }
                         if process.terminationStatus == 0 {
-                            self.statusLabel.stringValue = "已透過 Cyder 啟動\(game.name)"
+                            let launchVerb = launcher == .defaultApplication ? "開啟" : "透過 Cyder 開啟"
+                            self.statusLabel.stringValue = "已\(launchVerb)\(game.name)"
                         } else {
                             let msg = errorText.flatMap { $0.isEmpty ? nil : $0 } ?? "open 結束代碼 \(process.terminationStatus)"
                             self.showError(BeanfunError.rejected(msg))
@@ -753,6 +762,11 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         } catch {
             showError(error)
         }
+    }
+
+    private func launchViaCyder() {
+        guard let game = selectedGame else { return }
+        launchViaOpen(launcher: .cyder(for: game))
     }
 
     private func launchViaMapleStoryLauncherWine() {
@@ -771,7 +785,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         }
 
         let args = MapleStoryWineLauncher.arguments(executablePath: path, accountID: account.id, otp: otp.value)
-        let env = MapleStoryWineLauncher.processEnvironment(enableMetalHUD: enableMetalHUD)
+        let env = MapleStoryWineLauncher.processEnvironment()
 
         statusLabel.stringValue = "正在以 MapleStory Launcher 啟動新楓之谷…"
         do {
@@ -826,23 +840,17 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             showError(BeanfunError.rejected("請先選擇 Maplestory_Classic.exe"))
             return
         }
-        var env = ProcessInfo.processInfo.environment
-        if enableMetalHUD {
-            env["MTL_HUD_ENABLED"] = "1"
-        }
         let standardError = Pipe()
         let args = NexonPlugURLParser.classicOpenArguments(
             executablePath: path,
-            passargTokens: passargTokens,
-            enableMetalHUD: enableMetalHUD
+            passargTokens: passargTokens
         )
 
-        statusLabel.stringValue = "正在啟動新楓之谷：經典版…"
+        statusLabel.stringValue = "正在開啟新楓之谷：經典版…"
         do {
             try runProcess(
                 launchPath: "/usr/bin/open",
                 arguments: args,
-                environment: env,
                 standardError: standardError,
                 terminationHandler: { [weak self] process in
                     let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
@@ -850,7 +858,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                     DispatchQueue.main.async {
                         guard let self = self else { return }
                         if process.terminationStatus == 0 {
-                            self.statusLabel.stringValue = "已透過 Cyder 啟動新楓之谷：經典版"
+                            self.statusLabel.stringValue = "已開啟新楓之谷：經典版"
                             if self.quitAfterSuccessfulClassicLaunch {
                                 NSApp.terminate(nil)
                             }

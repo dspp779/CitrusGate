@@ -13,7 +13,8 @@ enum LaunchUIPhase: Equatable {
 @MainActor
 final class AppModel: ObservableObject {
     private enum PendingLaunchKind {
-        case cyder
+        case defaultOpen
+        case cyderApp
         case mapleStoryWine
     }
 
@@ -73,7 +74,8 @@ final class AppModel: ObservableObject {
             defaults.set(advancedLaunchCommandStyle.rawValue, forKey: Self.advancedLaunchCommandStyleKey)
         }
     }
-    @Published var enableMetalHUD = false
+    @Published private(set) var isDownloadingClassicClient = false
+    @Published private(set) var classicDownloadStatus = ""
 
     private let defaults: UserDefaults
     private var pendingClassicPassargTokens: [String]?
@@ -89,9 +91,13 @@ final class AppModel: ObservableObject {
     private var otpTask: Task<Void, Never>?
     private var otpCountdownTask: Task<Void, Never>?
     private var launchCooldownTask: Task<Void, Never>?
+    private var classicDownloadTask: Task<Void, Never>?
     private static let launchCooldownNanoseconds: UInt64 = 10_000_000_000
-    private var pendingLaunchKind: PendingLaunchKind = .cyder
+    private var pendingLaunchKind: PendingLaunchKind = .defaultOpen
     private lazy var client = BeanfunClient { [weak self] message in
+        self?.appendLog(message)
+    }
+    private lazy var nxdlDownloader = NxdlDownloader { [weak self] message in
         self?.appendLog(message)
     }
 
@@ -141,8 +147,7 @@ final class AppModel: ObservableObject {
             game: game,
             executablePath: path,
             accountID: account.id,
-            otp: otp.value,
-            enableMetalHUD: enableMetalHUD
+            otp: otp.value
         )
     }
 
@@ -270,7 +275,7 @@ final class AppModel: ObservableObject {
                         isBusy = false
                         if mode == .standard, loadedAccounts.count == 1 {
                             statusMessage = "登入成功，正在以 \(loadedAccounts[0].displayName) 開啟遊戲…"
-                            pendingLaunchKind = .cyder
+                            pendingLaunchKind = .defaultOpen
                             launchSelectedAccount()
                         } else {
                             statusMessage = "登入成功，請選擇\(game.name)帳號"
@@ -332,8 +337,11 @@ final class AppModel: ObservableObject {
                 if launchWhenReady {
                     statusMessage = "OTP 已取得，正在以 \(account.displayName) 開啟遊戲…"
                     switch pendingLaunchKind {
-                    case .cyder:
-                        launchViaCyder()
+                    case .defaultOpen:
+                        launchViaOpen()
+                    case .cyderApp:
+                        guard let game = selectedGame else { return }
+                        launchViaOpen(launcher: .cyder(for: game))
                     case .mapleStoryWine:
                         launchViaMapleStoryLauncherWine()
                     }
@@ -404,7 +412,7 @@ final class AppModel: ObservableObject {
         }
         let panel = NSOpenPanel()
         panel.title = "選擇 \(game.executableName)"
-        panel.message = "選擇要由 Cyder 開啟的\(game.name)主程式"
+        panel.message = "選擇\(game.name)主程式"
         panel.prompt = "選擇"
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -418,11 +426,16 @@ final class AppModel: ObservableObject {
 
     /// Deprecated alias kept for the advanced-mode launch button.
     func launchGame() {
-        launchViaCyder()
+        launchViaOpen()
+    }
+
+    func launchSelectedAccountViaOpen() {
+        pendingLaunchKind = .defaultOpen
+        launchSelectedAccount()
     }
 
     func launchSelectedAccountViaCyder() {
-        pendingLaunchKind = .cyder
+        pendingLaunchKind = .cyderApp
         launchSelectedAccount()
     }
 
@@ -431,7 +444,7 @@ final class AppModel: ObservableObject {
         launchSelectedAccount()
     }
 
-    func launchViaCyder() {
+    func launchViaOpen(launcher: OpenLauncher = .defaultApplication) {
         guard let game = selectedGame else {
             errorMessage = "請先選擇遊戲"
             return
@@ -449,18 +462,13 @@ final class AppModel: ObservableObject {
         beginLaunchUI()
 
         let process = Process()
-        var env = ProcessInfo.processInfo.environment
-        if enableMetalHUD {
-            env["MTL_HUD_ENABLED"] = "1"
-        }
-        process.environment = env
         let standardError = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = game.openArguments(
             executablePath: path,
             accountID: account.id,
             otp: otp.value,
-            enableMetalHUD: enableMetalHUD
+            launcher: launcher
         )
         process.standardError = standardError
         process.terminationHandler = { [weak self] process in
@@ -472,13 +480,14 @@ final class AppModel: ObservableObject {
                 self.isBusy = false
                 if process.terminationStatus == 0 {
                     self.launchedAccountID = account.id
+                    let launchVerb = launcher == .defaultApplication ? "開啟" : "透過 Cyder 開啟"
                     if game.supportsAutomaticLogin {
-                        self.statusMessage = "已透過 Cyder 啟動\(game.name)"
+                        self.statusMessage = "已\(launchVerb)\(game.name)"
                     } else {
                         self.copy(otp.value)
                         self.statusMessage = "已啟動\(game.name)，OTP 已複製"
                     }
-                    self.appendLog("執行 open -n：game=\(game.serviceKey)，executable=\(path)，account=\(account.id)")
+                    self.appendLog("執行 open -n：launcher=\(launcher)，game=\(game.serviceKey)，executable=\(path)，account=\(account.id)")
                     self.markLaunchSucceeded()
                 } else {
                     let message = errorText.flatMap { $0.isEmpty ? nil : $0 }
@@ -492,7 +501,12 @@ final class AppModel: ObservableObject {
         }
 
         isBusy = true
-        statusMessage = "正在以 open -n 透過 Cyder 啟動\(game.name)…"
+        switch launcher {
+        case .defaultApplication:
+            statusMessage = "正在開啟\(game.name)…"
+        case .cyder, .cyderMapleStoryOEM:
+            statusMessage = "正在以 Cyder 開啟\(game.name)…"
+        }
         do {
             try process.run()
         } catch {
@@ -500,6 +514,14 @@ final class AppModel: ObservableObject {
             markLaunchFailed()
             present(error)
         }
+    }
+
+    func launchViaCyder() {
+        guard let game = selectedGame else {
+            errorMessage = "請先選擇遊戲"
+            return
+        }
+        launchViaOpen(launcher: .cyder(for: game))
     }
 
     func launchViaMapleStoryLauncherWine() {
@@ -526,7 +548,7 @@ final class AppModel: ObservableObject {
             accountID: account.id,
             otp: otp.value
         )
-        process.environment = MapleStoryWineLauncher.processEnvironment(enableMetalHUD: enableMetalHUD)
+        process.environment = MapleStoryWineLauncher.processEnvironment()
 
         do {
             try process.run()
@@ -625,6 +647,67 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func downloadClassicClient() {
+        guard selectedGame?.id == GameDefinition.mapleStoryClassic.id else { return }
+        guard !isDownloadingClassicClient else { return }
+
+        let panel = NSOpenPanel()
+        panel.title = "選擇下載資料夾"
+        panel.message = "新楓之谷：經典版客戶端將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
+        panel.prompt = "下載到此處"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+
+        classicDownloadTask?.cancel()
+        classicDownloadTask = Task { [weak self] in
+            guard let self else { return }
+            self.isDownloadingClassicClient = true
+            self.isBusy = true
+            self.classicDownloadStatus = "準備下載…"
+            self.statusMessage = "正在下載新楓之谷：經典版客戶端…"
+
+            do {
+                try await self.nxdlDownloader.downloadClassicClient(to: destination) { progress in
+                    Task { @MainActor in
+                        self.classicDownloadStatus = progress
+                    }
+                }
+
+                if let exePath = self.nxdlDownloader.findClassicExecutable(in: destination) {
+                    self.executablePath = exePath
+                    self.statusMessage = "下載完成，已設定主程式路徑"
+                    self.appendLog("經典版下載完成：\(destination.path)，主程式=\(exePath)")
+                } else {
+                    self.statusMessage = "下載完成，請手動選擇 Maplestory_Classic.exe"
+                    self.appendLog("經典版下載完成：\(destination.path)（未自動找到主程式）")
+                }
+            } catch is CancellationError {
+                self.statusMessage = "下載已取消"
+            } catch let error as NxdlDownloaderError {
+                if case .cancelled = error {
+                    self.statusMessage = "下載已取消"
+                } else {
+                    self.present(error)
+                }
+            } catch {
+                self.present(error)
+            }
+
+            self.isDownloadingClassicClient = false
+            self.isBusy = false
+            self.classicDownloadStatus = ""
+        }
+    }
+
+    func cancelClassicDownload() {
+        nxdlDownloader.cancel()
+        classicDownloadTask?.cancel()
+    }
+
     func handleOpenedURL(_ url: URL, fromColdStart: Bool = false) {
         if fromColdStart {
             quitAfterSuccessfulClassicLaunch = true
@@ -694,17 +777,11 @@ final class AppModel: ObservableObject {
             return
         }
         let process = Process()
-        var env = ProcessInfo.processInfo.environment
-        if enableMetalHUD {
-            env["MTL_HUD_ENABLED"] = "1"
-        }
-        process.environment = env
         let standardError = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = NexonPlugURLParser.classicOpenArguments(
             executablePath: path,
-            passargTokens: passargTokens,
-            enableMetalHUD: enableMetalHUD
+            passargTokens: passargTokens
         )
         process.standardError = standardError
         process.terminationHandler = { [weak self] process in
@@ -715,7 +792,7 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 self.isBusy = false
                 if process.terminationStatus == 0 {
-                    self.statusMessage = "已透過 Cyder 啟動新楓之谷：經典版"
+                    self.statusMessage = "已開啟新楓之谷：經典版"
                     self.appendLog("執行 open -n：classic executable=\(path) args=\(passargTokens.joined(separator: " "))")
                     if self.quitAfterSuccessfulClassicLaunch {
                         NSApp.terminate(nil)
@@ -728,7 +805,7 @@ final class AppModel: ObservableObject {
             }
         }
         isBusy = true
-        statusMessage = "正在以 open -n 透過 Cyder 啟動新楓之谷：經典版…"
+        statusMessage = "正在開啟新楓之谷：經典版…"
         do {
             try process.run()
         } catch {
@@ -844,7 +921,7 @@ final class AppModel: ObservableObject {
         launchCooldownTask = nil
         launchUIPhase = .idle
         launchStatusText = ""
-        pendingLaunchKind = .cyder
+        pendingLaunchKind = .defaultOpen
     }
 
     func clearError() {

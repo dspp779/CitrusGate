@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 系統需求 | macOS 13 以上 | macOS 10.12 以上（Intel） |
 | 架構 | Apple Silicon + Intel | 僅 Intel (x86_64) |
-| 功能 | 完整（含 Wine 啟動、FPS 顯示、進階模式） | 經典 AppKit 介面（含主程式選擇、Cyder 啟動與經典版支援） |
+| 功能 | 完整（含 Wine 啟動、進階模式） | 經典 AppKit 介面（含主程式選擇、Cyder 啟動與經典版支援） |
 | 建置 | `./build.sh` | `./build-legacy.sh` |
 | 輸出 | `dist/Beanfun OTP.app` | `dist/Beanfun OTP Legacy.app` |
 
@@ -24,8 +24,6 @@ App 每次啟動預設使用一般模式。先從附有官方縮圖的精簡清�
 
 - 只有一個遊戲帳號時，會自動取得 OTP 並啟動遊戲。
 - 有多個帳號時，選擇帳號後按「以〈帳號〉開啟遊戲」。
-
-提供可選的「顯示遊戲流暢度 (FPS)」勾選項（預設關閉且不記憶），開啟時會透過 macOS 官方 `open --env MTL_HUD_ENABLED=1` 參數將 Metal Performance HUD 注入目標進程。
 
 新楓之谷在一般模式提供「以 Cyder 開啟」與「以 MapleStory Launcher 開啟」。新楓之谷可選：
 
@@ -44,7 +42,7 @@ App 每次啟動預設使用一般模式。先從附有官方縮圖的精簡清�
 
 「遊戲啟動指令」區塊會顯示**完整** shell 指令（不是只有 `--args` 後的遊戲參數），可直接複製到「終端機」執行。新楓之谷可在 `open` 與 **Nexon MapleStory Launcher Wine** 兩種形式間切換；其他遊戲僅顯示 `open` 形式。
 
-`open` 形式會呼叫 macOS 的 `open -n`（或帶入 `--env MTL_HUD_ENABLED=1`），依 `.exe` 的預設開啟 App 建立新的 Cyder instance（路徑即使包含空白也會正確引號）。支援帶入登入參數的遊戲如下：
+`open` 形式會呼叫 macOS 的 `open -n`，依 `.exe` 的預設開啟 App 建立新的 Cyder instance（路徑即使包含空白也會正確引號）。支援帶入登入參數的遊戲如下：
 
 ```sh
 open -n '/path/to/MapleStory.exe' --args tw.login.maplestory.beanfun.com 8484 BeanFun <ServiceAccountID> <OTP>

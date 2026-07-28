@@ -88,18 +88,13 @@ struct GameDefinition: Identifiable, Hashable {
         executablePath: String,
         accountID: String,
         otp: String,
-        enableMetalHUD: Bool = false
+        launcher: OpenLauncher = .defaultApplication
     ) -> [String] {
-        let arguments = gameArguments(accountID: accountID, otp: otp)
-        var result = ["-n"]
-        if enableMetalHUD {
-            result += ["--env", "MTL_HUD_ENABLED=1"]
-        }
-        result.append(executablePath)
-        if !arguments.isEmpty {
-            result += ["--args"] + arguments
-        }
-        return result
+        OpenLaunchArguments.build(
+            executablePath: executablePath,
+            gameArguments: gameArguments(accountID: accountID, otp: otp),
+            launcher: launcher
+        )
     }
 
     func commandLine(accountID: String, otp: String) -> String {
@@ -214,6 +209,48 @@ enum AdvancedLaunchCommandStyle: String, CaseIterable, Identifiable {
     }
 }
 
+enum OpenLauncher: Equatable {
+    case defaultApplication
+    case cyder
+    case cyderMapleStoryOEM
+
+    static let cyderApplicationName = "Cyder"
+    static let cyderMapleStoryOEMApplicationName = "Cyder MapleStory OEM"
+    static let cyderBundleIdentifier = "local.cyder.app"
+    static let cyderMapleStoryOEMBundleIdentifier = "local.cyder.maplestory-oem25"
+
+    static func cyder(for game: GameDefinition) -> OpenLauncher {
+        game.id == GameDefinition.mapleStory.id ? .cyderMapleStoryOEM : .cyder
+    }
+
+    var openApplicationArguments: [String] {
+        switch self {
+        case .defaultApplication:
+            return []
+        case .cyder:
+            return ["-a", Self.cyderApplicationName]
+        case .cyderMapleStoryOEM:
+            return ["-a", Self.cyderMapleStoryOEMApplicationName]
+        }
+    }
+}
+
+enum OpenLaunchArguments {
+    static func build(
+        executablePath: String,
+        gameArguments: [String],
+        launcher: OpenLauncher = .defaultApplication
+    ) -> [String] {
+        var result = ["-n"]
+        result += launcher.openApplicationArguments
+        result.append(executablePath)
+        if !gameArguments.isEmpty {
+            result += ["--args"] + gameArguments
+        }
+        return result
+    }
+}
+
 enum LaunchCommandBuilder {
     static func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
@@ -224,37 +261,41 @@ enum LaunchCommandBuilder {
         game: GameDefinition,
         accountID: String,
         otp: String,
-        enableMetalHUD: Bool = false
+        launcher: OpenLauncher = .defaultApplication
     ) -> String {
         let quotedPath = shellQuote(executablePath)
         let args = game.gameArguments(accountID: accountID, otp: otp)
-        let envArg = enableMetalHUD ? "--env MTL_HUD_ENABLED=1 " : ""
-        if args.isEmpty {
-            return "open -n \(envArg)\(quotedPath)"
+        let applicationFlag: String
+        switch launcher {
+        case .defaultApplication:
+            applicationFlag = ""
+        case .cyder:
+            applicationFlag = "-a \(shellQuote(OpenLauncher.cyderApplicationName)) "
+        case .cyderMapleStoryOEM:
+            applicationFlag = "-a \(shellQuote(OpenLauncher.cyderMapleStoryOEMApplicationName)) "
         }
-        return "open -n \(envArg)\(quotedPath) --args \(args.joined(separator: " "))"
+        if args.isEmpty {
+            return "open -n \(applicationFlag)\(quotedPath)"
+        }
+        return "open -n \(applicationFlag)\(quotedPath) --args \(args.joined(separator: " "))"
     }
 
     static func nexonWineCommand(
         executablePath: String,
         accountID: String,
-        otp: String,
-        enableMetalHUD: Bool = false
+        otp: String
     ) -> String {
         let workdir = URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
         let args = GameDefinition.mapleStory
             .gameArguments(accountID: accountID, otp: otp)
             .joined(separator: " ")
-        var envExports = """
+        let envExports = """
         export CX_ROOT=\(shellQuote(MapleStoryWineLauncher.cxRoot))
         export PATH="$CX_ROOT/MapleStory Launcher:$PATH"
         export LANG=zh_TW.UTF-8
         export LC_ALL=zh_TW.UTF-8
         export LC_CTYPE=zh_TW.UTF-8
         """
-        if enableMetalHUD {
-            envExports += "\nexport MTL_HUD_ENABLED=1"
-        }
         return """
         \(envExports)
 
@@ -267,23 +308,20 @@ enum LaunchCommandBuilder {
         game: GameDefinition,
         executablePath: String,
         accountID: String,
-        otp: String,
-        enableMetalHUD: Bool = false
+        otp: String
     ) -> String {
         if style == .nexonWine, game.id == GameDefinition.mapleStory.id {
             return nexonWineCommand(
                 executablePath: executablePath,
                 accountID: accountID,
-                otp: otp,
-                enableMetalHUD: enableMetalHUD
+                otp: otp
             )
         }
         return openCommand(
             executablePath: executablePath,
             game: game,
             accountID: accountID,
-            otp: otp,
-            enableMetalHUD: enableMetalHUD
+            otp: otp
         )
     }
 }

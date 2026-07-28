@@ -34,17 +34,13 @@ enum NexonPlugURLParser {
     static func classicOpenArguments(
         executablePath: String,
         passargTokens: [String],
-        enableMetalHUD: Bool = false
+        launcher: OpenLauncher = .defaultApplication
     ) -> [String] {
-        var result = ["-n"]
-        if enableMetalHUD {
-            result += ["--env", "MTL_HUD_ENABLED=1"]
-        }
-        result.append(executablePath)
-        if !passargTokens.isEmpty {
-            result += ["--args"] + passargTokens
-        }
-        return result
+        OpenLaunchArguments.build(
+            executablePath: executablePath,
+            gameArguments: passargTokens,
+            launcher: launcher
+        )
     }
 
     private static func passargTokens(from url: URL) -> [String] {

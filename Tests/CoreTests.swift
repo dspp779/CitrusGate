@@ -18,7 +18,9 @@ enum CoreTests {
         try testQuarantineStatusWithoutAttribute()
         try testQuarantineStatusWithAttribute()
         try testQuarantineRemovalErrorDescription()
-        print("CoreTests: 15 tests passed")
+        try testNxdlProgressParser()
+        try testOpenLauncherArguments()
+        print("CoreTests: 17 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -132,6 +134,30 @@ enum CoreTests {
             "MapleStory open full command mismatch"
         )
 
+        let cyderCommand = LaunchCommandBuilder.openCommand(
+            executablePath: "/Games/Maple Story/MapleStory.exe",
+            game: .mapleStory,
+            accountID: "T9ACCOUNT",
+            otp: "12345678",
+            launcher: .cyderMapleStoryOEM
+        )
+        try expect(
+            cyderCommand == "open -n -a 'Cyder MapleStory OEM' '/Games/Maple Story/MapleStory.exe' --args tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678",
+            "MapleStory Cyder OEM open command mismatch"
+        )
+
+        let standardCyderCommand = LaunchCommandBuilder.openCommand(
+            executablePath: "/Games/mabinogi.exe",
+            game: try require(GameDefinition.all.first { $0.id == "mabinogi" }, "Mabinogi missing"),
+            accountID: "A2ACCOUNT",
+            otp: "OTP123",
+            launcher: .cyder
+        )
+        try expect(
+            standardCyderCommand == "open -n -a 'Cyder' '/Games/mabinogi.exe' --args /N:A2ACCOUNT /V:OTP123 /T:gamania",
+            "standard Cyder open command mismatch"
+        )
+
         let classic = try require(GameDefinition.all.first { $0.id == "maplestory-classic" }, "Classic missing")
         let manual = LaunchCommandBuilder.openCommand(
             executablePath: "/Games/Maplestory_Classic.exe",
@@ -158,33 +184,6 @@ enum CoreTests {
         wine --bottle maplestory --wait-children --enable-alt-loader macdrv --workdir '/Games/Maple Story' '/Games/Maple Story/MapleStory.exe' tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678
         """
         try expect(command == expected, "Nexon Wine full command mismatch")
-
-        let commandWithHUD = LaunchCommandBuilder.nexonWineCommand(
-            executablePath: "/Games/Maple Story/MapleStory.exe",
-            accountID: "T9ACCOUNT",
-            otp: "12345678",
-            enableMetalHUD: true
-        )
-        let expectedWithHUD = """
-        export CX_ROOT='/Applications/MapleStory Launcher.app/Contents/SharedSupport/maplestoryna'
-        export PATH="$CX_ROOT/MapleStory Launcher:$PATH"
-        export LANG=zh_TW.UTF-8
-        export LC_ALL=zh_TW.UTF-8
-        export LC_CTYPE=zh_TW.UTF-8
-        export MTL_HUD_ENABLED=1
-
-        wine --bottle maplestory --wait-children --enable-alt-loader macdrv --workdir '/Games/Maple Story' '/Games/Maple Story/MapleStory.exe' tw.login.maplestory.beanfun.com 8484 BeanFun T9ACCOUNT 12345678
-        """
-        try expect(commandWithHUD == expectedWithHUD, "Nexon Wine full command with HUD mismatch")
-
-        let openWithHUD = LaunchCommandBuilder.openCommand(
-            executablePath: "/Games/Maple Story/MapleStory.exe",
-            game: GameDefinition.mapleStory,
-            accountID: "T9ACCOUNT",
-            otp: "12345678",
-            enableMetalHUD: true
-        )
-        try expect(openWithHUD.hasPrefix("open -n --env MTL_HUD_ENABLED=1 "), "open command with Metal HUD flag mismatch")
 
         let openFallback = LaunchCommandBuilder.fullCommand(
             style: .nexonWine,
@@ -270,12 +269,8 @@ enum CoreTests {
         try expect(env["LANG"] == "zh_TW.UTF-8", "LANG")
         try expect(env["LC_ALL"] == "zh_TW.UTF-8", "LC_ALL")
         try expect(env["LC_CTYPE"] == "zh_TW.UTF-8", "LC_CTYPE")
-        try expect(env["MTL_HUD_ENABLED"] == nil, "MTL_HUD_ENABLED default nil")
         let path = try require(env["PATH"], "PATH")
         try expect(path.hasPrefix(MapleStoryWineLauncher.cxRoot + "/MapleStory Launcher:"), "PATH prefix")
-
-        let envWithHUD = MapleStoryWineLauncher.processEnvironment(enableMetalHUD: true)
-        try expect(envWithHUD["MTL_HUD_ENABLED"] == "1", "MTL_HUD_ENABLED when true")
     }
 
     private static func testQuarantineStatusWithoutAttribute() throws {
@@ -328,6 +323,55 @@ enum CoreTests {
             "-n",
             "/Games/Classic/Maplestory_Classic.exe",
         ], "classic open argv empty passarg")
+    }
+
+    private static func testNxdlProgressParser() throws {
+        let raw = "\u{001B}[32m[=========>          ]\u{001B}[0m  1.2 GiB/ 5.6 GiB (  3.4 MiB/s) Base.wz"
+        let formatted = try require(
+            NxdlProgressParser.formatProgressLine(raw),
+            "progress line"
+        )
+        try expect(formatted.contains("1.2 GiB"), "downloaded bytes")
+        try expect(formatted.contains("5.6 GiB"), "total bytes")
+        try expect(formatted.contains("3.4 MiB/s"), "speed")
+        try expect(formatted.contains("Base.wz"), "file name")
+
+        let plain = NxdlProgressParser.stripANSI("\u{001B}[1mhello\u{001B}[0m")
+        try expect(plain == "hello", "ansi strip")
+    }
+
+    private static func testOpenLauncherArguments() throws {
+        let mapleStoryArgs = GameDefinition.mapleStory.openArguments(
+            executablePath: "/Games/MapleStory.exe",
+            accountID: "T9ACCOUNT",
+            otp: "12345678",
+            launcher: .cyderMapleStoryOEM
+        )
+        try expect(mapleStoryArgs == [
+            "-n",
+            "-a",
+            "Cyder MapleStory OEM",
+            "/Games/MapleStory.exe",
+            "--args",
+            "tw.login.maplestory.beanfun.com",
+            "8484",
+            "BeanFun",
+            "T9ACCOUNT",
+            "12345678",
+        ], "MapleStory Cyder OEM argv")
+
+        let cyderArgs = GameDefinition.mapleStoryClassic.openArguments(
+            executablePath: "/Games/Maplestory_Classic.exe",
+            accountID: "id",
+            otp: "otp",
+            launcher: .cyder
+        )
+        try expect(cyderArgs == [
+            "-n",
+            "-a",
+            "Cyder",
+            "/Games/Maplestory_Classic.exe",
+        ], "Classic Cyder argv")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

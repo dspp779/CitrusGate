@@ -240,8 +240,34 @@ struct ContentView: View {
                 model.claimNexonPlugHandler()
             }
             .buttonStyle(.link)
-            Toggle("顯示遊戲流暢度 (FPS)", isOn: $model.enableMetalHUD)
-                .font(.caption)
+            VStack(spacing: 8) {
+                if model.isDownloadingClassicClient {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(model.classicDownloadStatus.isEmpty
+                             ? "正在下載…"
+                             : model.classicDownloadStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Button("取消下載", role: .destructive) {
+                        model.cancelClassicDownload()
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                } else {
+                    Button {
+                        model.downloadClassicClient()
+                    } label: {
+                        Label("下載經典版客戶端", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isBusy)
+                }
+            }
             Button {
                 model.openClassicLoginPage()
             } label: {
@@ -381,14 +407,24 @@ struct ContentView: View {
                 } else if let account = model.selectedAccount {
                     VStack(spacing: 10) {
                         if model.selectedGame?.id == GameDefinition.mapleStory.id {
-                            HStack(spacing: 10) {
-                                Button {
-                                    model.launchSelectedAccountViaCyder()
-                                } label: {
-                                    Label("以 Cyder 開啟", systemImage: "play.fill")
+                            VStack(spacing: 10) {
+                                HStack(spacing: 10) {
+                                    Button {
+                                        model.launchSelectedAccountViaOpen()
+                                    } label: {
+                                        Label("開啟", systemImage: "play.fill")
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(model.areLaunchButtonsDisabled)
+
+                                    Button {
+                                        model.launchSelectedAccountViaCyder()
+                                    } label: {
+                                        Label("以 Cyder 開啟", systemImage: "shippingbox")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .disabled(model.areLaunchButtonsDisabled)
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(model.areLaunchButtonsDisabled)
 
                                 Button {
                                     model.launchSelectedAccountViaWine()
@@ -398,18 +434,24 @@ struct ContentView: View {
                                 .buttonStyle(.bordered)
                                 .disabled(model.areLaunchButtonsDisabled)
                             }
-                            Toggle("顯示遊戲流暢度 (FPS)", isOn: $model.enableMetalHUD)
-                                .font(.caption)
                         } else {
-                            Button {
-                                model.launchSelectedAccountViaCyder()
-                            } label: {
-                                Label("以 \(account.displayName) 開啟遊戲", systemImage: "play.fill")
-                                    .frame(minWidth: 190)
+                            HStack(spacing: 10) {
+                                Button {
+                                    model.launchSelectedAccountViaOpen()
+                                } label: {
+                                    Label("開啟", systemImage: "play.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.areLaunchButtonsDisabled)
+
+                                Button {
+                                    model.launchSelectedAccountViaCyder()
+                                } label: {
+                                    Label("以 Cyder 開啟", systemImage: "shippingbox")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(model.areLaunchButtonsDisabled)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                            .disabled(model.areLaunchButtonsDisabled)
                         }
 
                         if !model.launchStatusText.isEmpty {
@@ -573,8 +615,6 @@ struct ContentView: View {
                         .labelsHidden()
                     }
 
-                    Toggle("顯示遊戲流暢度 (FPS)", isOn: $model.enableMetalHUD)
-
                     if let command = model.fullLaunchCommand {
                         Text(command)
                             .font(.callout.monospaced())
@@ -615,9 +655,9 @@ struct ContentView: View {
                 .padding(10)
             }
 
-            GroupBox("透過 Cyder 啟動遊戲") {
+            GroupBox("開啟遊戲") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("請先在 macOS 將 .exe 的預設開啟程式設為 Cyder.app。檔案位置會自動記住。")
+                    Text("使用 macOS 的 open -n 依預設 App 或指定 Cyder 開啟 .exe。檔案位置會自動記住。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     HStack(spacing: 8) {
@@ -630,7 +670,7 @@ struct ContentView: View {
                     }
                     HStack {
                         Text(model.selectedGame?.supportsAutomaticLogin == true
-                             ? "使用 open -n，並將帳號 ID 與 OTP 放在 --args 後傳入。"
+                             ? "「開啟」使用預設 App；「以 Cyder 開啟」指定 Cyder.app（新楓之谷為 Cyder MapleStory OEM）。"
                              : "使用 open -n 啟動；OTP 會放入剪貼簿供登入使用。")
                             .font(.caption)
                             .foregroundStyle(.secondary)

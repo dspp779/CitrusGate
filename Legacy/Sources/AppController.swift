@@ -839,10 +839,30 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             showError(BeanfunError.rejected("請先選擇 Maplestory_Classic.exe"))
             return
         }
+
+        let launcher: OpenLauncher
+        if CyderInstallation.isOfficialCyderInstalled() {
+            launcher = .cyder
+        } else {
+            let alert = NSAlert()
+            alert.messageText = "未偵測到 Cyder"
+            alert.informativeText = "經典版需透過 Cyder 才能可靠傳遞執行參數。請安裝 Cyder 正式版後再試。若仍要以系統預設的「打開方式」開啟，參數可能無法正確傳遞，遊戲可能無法登入。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "仍要開啟")
+            alert.addButton(withTitle: "取消")
+            let response = alert.runModal()
+            if response != .alertFirstButtonReturn {
+                statusLabel.stringValue = "已取消"
+                return
+            }
+            launcher = .defaultApplication
+        }
+
         let standardError = Pipe()
         let args = NexonPlugURLParser.classicOpenArguments(
             executablePath: path,
-            passargTokens: passargTokens
+            passargTokens: passargTokens,
+            launcher: launcher
         )
 
         statusLabel.stringValue = "正在開啟新楓之谷：經典版…"

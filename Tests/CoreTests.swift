@@ -14,13 +14,16 @@ enum CoreTests {
         try testNexonWineFullLaunchCommand()
         try testNexonPlugURLParser()
         try testClassicOpenArguments()
+        try testClassicOpenArgumentsPreferCyder()
+        try testCyderInstallationDetectsPath()
+        try testCyderInstallationMissingPath()
         try testMapleStoryWineLauncher()
         try testQuarantineStatusWithoutAttribute()
         try testQuarantineStatusWithAttribute()
         try testQuarantineRemovalErrorDescription()
         try testNxdlProgressParser()
         try testOpenLauncherArguments()
-        print("CoreTests: 17 tests passed")
+        print("CoreTests: 20 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -323,6 +326,46 @@ enum CoreTests {
             "-n",
             "/Games/Classic/Maplestory_Classic.exe",
         ], "classic open argv empty passarg")
+    }
+
+    private static func testClassicOpenArgumentsPreferCyder() throws {
+        let args = NexonPlugURLParser.classicOpenArguments(
+            executablePath: "/Games/Classic/Maplestory_Classic.exe",
+            passargTokens: ["4554314", "sessabc", "2373", "944"],
+            launcher: .cyder
+        )
+        try expect(args == [
+            "-n",
+            "-b",
+            "local.cyder.app",
+            "/Games/Classic/Maplestory_Classic.exe",
+            "--args",
+            "4554314",
+            "sessabc",
+            "2373",
+            "944",
+        ], "classic open argv with Cyder -b")
+    }
+
+    private static func testCyderInstallationDetectsPath() throws {
+        var lookedUp: String?
+        let installed = CyderInstallation.isOfficialCyderInstalled { id in
+            lookedUp = id
+            return "/Applications/Cyder.app"
+        }
+        try expect(lookedUp == OpenLauncher.cyderBundleIdentifier, "lookup must use official Cyder id")
+        try expect(installed == true, "non-empty resolve path should count as installed")
+    }
+
+    private static func testCyderInstallationMissingPath() throws {
+        try expect(
+            CyderInstallation.isOfficialCyderInstalled { _ in nil } == false,
+            "nil resolve should be not installed"
+        )
+        try expect(
+            CyderInstallation.isOfficialCyderInstalled { _ in "" } == false,
+            "empty resolve should be not installed"
+        )
     }
 
     private static func testNxdlProgressParser() throws {

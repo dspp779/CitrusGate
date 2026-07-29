@@ -770,6 +770,25 @@ final class AppModel: ObservableObject {
             errorMessage = "請先選擇 Maplestory_Classic.exe"
             return
         }
+
+        let launcher: OpenLauncher
+        if CyderInstallation.isOfficialCyderInstalled() {
+            launcher = .cyder
+        } else {
+            let alert = NSAlert()
+            alert.messageText = "未偵測到 Cyder"
+            alert.informativeText = "經典版需透過 Cyder 才能可靠傳遞執行參數。請安裝 Cyder 正式版後再試。若仍要以系統預設的「打開方式」開啟，參數可能無法正確傳遞，遊戲可能無法登入。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "仍要開啟")
+            alert.addButton(withTitle: "取消")
+            let response = alert.runModal()
+            if response != .alertFirstButtonReturn {
+                statusMessage = "已取消"
+                return
+            }
+            launcher = .defaultApplication
+        }
+
         do {
             try clearQuarantineIfNeeded(at: path)
         } catch {
@@ -781,9 +800,11 @@ final class AppModel: ObservableObject {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = NexonPlugURLParser.classicOpenArguments(
             executablePath: path,
-            passargTokens: passargTokens
+            passargTokens: passargTokens,
+            launcher: launcher
         )
         process.standardError = standardError
+        let launcherLabel = launcher == .cyder ? "cyder" : "default"
         process.terminationHandler = { [weak self] process in
             let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
             let errorText = String(data: errorData, encoding: .utf8)?
@@ -793,7 +814,7 @@ final class AppModel: ObservableObject {
                 self.isBusy = false
                 if process.terminationStatus == 0 {
                     self.statusMessage = "已開啟新楓之谷：經典版"
-                    self.appendLog("執行 open -n：classic executable=\(path) args=\(passargTokens.joined(separator: " "))")
+                    self.appendLog("執行 open -n：classic executable=\(path) launcher=\(launcherLabel) args=\(passargTokens.joined(separator: " "))")
                     if self.quitAfterSuccessfulClassicLaunch {
                         NSApp.terminate(nil)
                     }

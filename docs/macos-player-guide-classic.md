@@ -42,7 +42,7 @@ Cyder 下載：<https://github.com/dspp779/CyderBits/releases/latest>
 1. 下載並安裝 **Cyder 正式版**：<https://github.com/dspp779/CyderBits/releases/latest>  
    （不要用 `v0.7.0-maplestory` 開經典版。）
 2. 取得 `Maplestory_Classic.exe`，放到好找的路徑（例如文件下自訂資料夾）。
-3. 建議在 Finder 對該 `.exe` 按「取得資訊」→「打開方式」選 **Cyder**。
+3. Beanfun OTP 會優先以 `open -b local.cyder.app` 指定 Cyder；通常不必再改 Finder「打開方式」。若未安裝 Cyder，App 會提示後才可用系統預設 App 開啟。
 4. 準備 **Beanfun OTP**（Modern，macOS 13+；見專案 `README.md`／Release）。
 
 ---
@@ -72,7 +72,7 @@ Cyder 下載：<https://github.com/dspp779/CyderBits/releases/latest>
 2. Beanfun OTP 收到後會以大致如下形式啟動：
 
    ```sh
-   open -n '/path/to/Maplestory_Classic.exe' --args <passarg 各參數…>
+   open -n -b local.cyder.app '/path/to/Maplestory_Classic.exe' --args <passarg 各參數…>
    ```
 
 3. 行為說明：
@@ -87,7 +87,7 @@ Cyder 下載：<https://github.com/dspp779/CyderBits/releases/latest>
 | 現象 | 可能原因 | 怎麼辦 |
 | --- | --- | --- |
 | 點登入沒反應／開了第二個 App | 未設為 NexonPlug handler，或舊版行為 | 在經典版畫面重新「設為由 Beanfun OTP 處理」；更新至支援單實例的版本 |
-| 出現 il2cpp／EventWrite 相關錯誤 | 誤用北美 Launcher 或 Cyder 新楓之谷分支（oem25） | 改用 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) + `open -n`；確認 `.exe` 打開方式正確 |
+| 出現 il2cpp／EventWrite 相關錯誤 | 誤用北美 Launcher 或 Cyder 新楓之谷分支（oem25） | 改用 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) + `open -n -b local.cyder.app`；確認 Cyder 正式版已安裝，且 App 以 `-b` 指定 Cyder 啟動（Finder「打開方式」僅在手動 `open` 或略過未安裝提示時相關） |
 | 找不到 NexonPlug.app（轉發失敗） | 未裝官方 Plug，且連結不是經典版 | 僅經典版需 Beanfun OTP；其他 Plug 遊戲請安裝官方 NexonPlug |
 | 選檔後仍無法啟動 | 路徑不是有效的 `.exe` | 重新選擇真正的 `Maplestory_Classic.exe` |
 

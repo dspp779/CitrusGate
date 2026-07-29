@@ -59,6 +59,7 @@ enum NxdlDownloaderError: LocalizedError {
     case binaryDownloadFailed(String)
     case binaryNotExecutable(String)
     case processFailed(Int32, String)
+    case pathNormalizeFailed(String)
     case cancelled
 
     var errorDescription: String? {
@@ -72,9 +73,27 @@ enum NxdlDownloaderError: LocalizedError {
                 return "nxdl 下載失敗（結束代碼 \(code)）"
             }
             return "nxdl 下載失敗（結束代碼 \(code)）：\(output)"
+        case let .pathNormalizeFailed(message):
+            return "無法還原下載檔案路徑：\(message)"
         case .cancelled:
             return "下載已取消"
         }
+    }
+}
+
+/// nxdl may write Windows-style paths as a single macOS filename containing `\`.
+/// Example basename: `Maplestory_Classic_Data\Plugins\x86_64\...\af.pak`
+enum WindowsPathFilenameNormalizer {
+    /// Splits a basename that embeds `\` into directory + file components.
+    /// Returns `nil` when the name does not need rewriting.
+    static func relativeComponents(from basename: String) -> [String]? {
+        guard basename.contains("\\") else { return nil }
+        let parts = basename
+            .split(separator: "\\", omittingEmptySubsequences: true)
+            .map(String.init)
+            .filter { !$0.isEmpty && $0 != "." && $0 != ".." }
+        guard parts.count >= 2 else { return nil }
+        return parts
     }
 }
 
@@ -124,6 +143,73 @@ final class NxdlDownloader {
     ) async throws {
         let binary = try await ensureBinary(onStatus: onStatus)
         try await runDownload(binary: binary, destination: destination, onStatus: onStatus)
+        onStatus("正在還原檔案路徑…")
+        let restored = try normalizeWindowsPathFilenames(in: destination)
+        if restored > 0 {
+            log("已還原 \(restored) 個含反斜線的檔名為目錄結構：\(destination.path)")
+            onStatus("已還原 \(restored) 個檔案路徑")
+        }
+    }
+
+    /// Rewrites files whose basenames contain `\` into real directory trees.
+    /// Returns the number of items moved.
+    func normalizeWindowsPathFilenames(in root: URL) throws -> Int {
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+
+        var candidates: [URL] = []
+        for case let itemURL as URL in enumerator {
+            if WindowsPathFilenameNormalizer.relativeComponents(from: itemURL.lastPathComponent) != nil {
+                candidates.append(itemURL)
+            }
+        }
+
+        // Longer basenames first so nested malformed names are not disrupted mid-pass.
+        candidates.sort { $0.lastPathComponent.count > $1.lastPathComponent.count }
+
+        var restored = 0
+        for sourceURL in candidates {
+            guard let parts = WindowsPathFilenameNormalizer.relativeComponents(
+                from: sourceURL.lastPathComponent
+            ) else {
+                continue
+            }
+            guard fileManager.fileExists(atPath: sourceURL.path) else { continue }
+
+            let parent = sourceURL.deletingLastPathComponent()
+            let destinationURL = parts.reduce(parent) { partial, component in
+                partial.appendingPathComponent(component)
+            }
+
+            if sourceURL.standardizedFileURL == destinationURL.standardizedFileURL {
+                continue
+            }
+
+            let destinationParent = destinationURL.deletingLastPathComponent()
+            try fileManager.createDirectory(
+                at: destinationParent,
+                withIntermediateDirectories: true
+            )
+
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try fileManager.removeItem(at: destinationURL)
+            }
+
+            do {
+                try fileManager.moveItem(at: sourceURL, to: destinationURL)
+            } catch {
+                throw NxdlDownloaderError.pathNormalizeFailed(
+                    "\(sourceURL.lastPathComponent) → \(destinationURL.path)：\(error.localizedDescription)"
+                )
+            }
+            restored += 1
+        }
+        return restored
     }
 
     func findClassicExecutable(in root: URL) -> String? {

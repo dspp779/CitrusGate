@@ -23,7 +23,9 @@ enum CoreTests {
         try testQuarantineRemovalErrorDescription()
         try testNxdlProgressParser()
         try testOpenLauncherArguments()
-        print("CoreTests: 20 tests passed")
+        try testWindowsPathFilenameNormalizer()
+        try testNormalizeWindowsPathFilenamesOnDisk()
+        print("CoreTests: 22 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -415,6 +417,60 @@ enum CoreTests {
             "local.cyder.app",
             "/Games/Maplestory_Classic.exe",
         ], "Classic Cyder argv")
+    }
+
+    private static func testWindowsPathFilenameNormalizer() throws {
+        let parts = try require(
+            WindowsPathFilenameNormalizer.relativeComponents(
+                from: #"Maplestory_Classic_Data\Plugins\x86_64\VuplexWebViewChromium\locales\af.pak"#
+            ),
+            "backslash basename"
+        )
+        try expect(parts == [
+            "Maplestory_Classic_Data",
+            "Plugins",
+            "x86_64",
+            "VuplexWebViewChromium",
+            "locales",
+            "af.pak",
+        ], "components")
+
+        try expect(
+            WindowsPathFilenameNormalizer.relativeComponents(from: "af.pak") == nil,
+            "plain name needs no rewrite"
+        )
+        try expect(
+            WindowsPathFilenameNormalizer.relativeComponents(from: #"trailing\"#) == nil,
+            "single component after split is invalid"
+        )
+    }
+
+    private static func testNormalizeWindowsPathFilenamesOnDisk() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("beanfunotp-nxdl-path-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let malformed = root.appendingPathComponent(
+            #"Maplestory_Classic_Data\Plugins\x86_64\VuplexWebViewChromium\locales\af.pak"#
+        )
+        try Data("pak".utf8).write(to: malformed)
+
+        let downloader = NxdlDownloader()
+        let restored = try downloader.normalizeWindowsPathFilenames(in: root)
+        try expect(restored == 1, "one file restored")
+
+        let expected = root
+            .appendingPathComponent("Maplestory_Classic_Data", isDirectory: true)
+            .appendingPathComponent("Plugins", isDirectory: true)
+            .appendingPathComponent("x86_64", isDirectory: true)
+            .appendingPathComponent("VuplexWebViewChromium", isDirectory: true)
+            .appendingPathComponent("locales", isDirectory: true)
+            .appendingPathComponent("af.pak")
+        try expect(FileManager.default.fileExists(atPath: expected.path), "normalized path exists")
+        try expect(!FileManager.default.fileExists(atPath: malformed.path), "malformed name removed")
+        let contents = try String(contentsOf: expected, encoding: .utf8)
+        try expect(contents == "pak", "file contents preserved")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

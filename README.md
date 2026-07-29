@@ -34,7 +34,7 @@ App 每次啟動預設使用一般模式。先從附有官方縮圖的精簡清�
 
 一般模式使用精簡的固定大小視窗，QR 畫面只保留 QR Code、掃描說明、剩餘時間與重新產生按鈕。QR 區域以一致的 `12pt` 四邊白色留白延伸至視窗上、左、右邊緣。視窗不可縮放或進入全螢幕；系統選單不顯示「編輯」、「顯示方式」、「遊戲」與「視窗」，保持最純粹乾淨的介面。
 
-另支援**楓之谷：經典版**（教學稱新楓之谷：經典版）：無 QR。選擇 `Maplestory_Classic.exe` 後開啟官方登入網頁；網頁透過 `NexonPlug://` 回傳參數，App 以 `open -n … --args` 啟動（預設走 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest)）。可在頁面直接將 `NexonPlug` 設為由 Beanfun OTP 處理（位在說明文案正下方）；其他非經典版 gameCode 會自動轉發官方 NexonPlug.app。測完可改回 `com.nexon.plug`。Beanfun OTP 僅允許單一實例；若由網頁 `NexonPlug://` 冷啟動並成功開啟經典版，啟動完成後會自動結束。完整步驟見 [`docs/macos-player-guide-classic.md`](docs/macos-player-guide-classic.md)。
+另支援**楓之谷：經典版**（教學稱新楓之谷：經典版）：無 QR。選擇 `Maplestory_Classic.exe` 後開啟官方登入網頁；網頁透過 `NexonPlug://` 回傳參數，App 以 `open -n -b local.cyder.app … --args` 優先指定 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) 啟動（未安裝時會提示，通常不必改 Finder「打開方式」）。可在頁面直接將 `NexonPlug` 設為由 Beanfun OTP 處理（位在說明文案正下方）；其他非經典版 gameCode 會自動轉發官方 NexonPlug.app。測完可改回 `com.nexon.plug`。Beanfun OTP 僅允許單一實例；若由網頁 `NexonPlug://` 冷啟動並成功開啟經典版，啟動完成後會自動結束。完整步驟見 [`docs/macos-player-guide-classic.md`](docs/macos-player-guide-classic.md)。
 
 ## 進階模式
 

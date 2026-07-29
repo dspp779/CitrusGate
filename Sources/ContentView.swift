@@ -51,6 +51,13 @@ struct ContentView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+        .sheet(isPresented: Binding(
+            get: { model.showClassicDownloadProgress },
+            set: { _ in }
+        )) {
+            ClassicDownloadProgressView(model: model)
+                .interactiveDismissDisabled(model.isDownloadingClassicClient)
+        }
     }
 
     private var windowSize: CGSize {
@@ -241,32 +248,13 @@ struct ContentView: View {
             }
             .buttonStyle(.link)
             VStack(spacing: 8) {
-                if model.isDownloadingClassicClient {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(model.classicDownloadStatus.isEmpty
-                             ? "正在下載…"
-                             : model.classicDownloadStatus)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(3)
-                            .multilineTextAlignment(.leading)
-                    }
-                    Button("取消下載", role: .destructive) {
-                        model.cancelClassicDownload()
-                    }
-                    .buttonStyle(.link)
-                    .font(.caption)
-                } else {
-                    Button {
-                        model.downloadClassicClient()
-                    } label: {
-                        Label("下載經典版客戶端", systemImage: "arrow.down.circle")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(model.isBusy)
+                Button {
+                    model.downloadClassicClient()
+                } label: {
+                    Label("下載經典版客戶端", systemImage: "arrow.down.circle")
                 }
+                .buttonStyle(.bordered)
+                .disabled(model.isBusy)
             }
             Button {
                 model.openClassicLoginPage()

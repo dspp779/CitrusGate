@@ -34,6 +34,14 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private var loginCompletionInFlight = false
     private var quitAfterSuccessfulClassicLaunch = false
     private var pendingClassicPassargTokens: [String]?
+    private var isDownloadingClassicClient = false {
+        didSet { updateClassicDownloadUI() }
+    }
+    private var classicDownloadStatus = ""
+    private var classicDownloadProgressWindow: ClassicDownloadProgressWindowController?
+    private lazy var nxdlDownloader = NxdlDownloader { message in
+        NSLog("%@", message)
+    }
 
     private var executablePath: String = "" {
         didSet {
@@ -56,6 +64,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     // Classic Mode UI
     private let openClassicWebButton = NSButton(title: "開啟官方登入網頁", target: nil, action: nil)
     private let claimNexonPlugButton = NSButton(title: "將 NexonPlug 設為由 Beanfun OTP 處理", target: nil, action: nil)
+    private let downloadClassicButton = NSButton(title: "下載經典版客戶端", target: nil, action: nil)
     private let classicNoticeLabel = NSTextField(wrappingLabelWithString: "網頁登入後會透過 NexonPlug:// 傳送參數啟動經典版。")
     private var classicContainer: NSStackView!
 
@@ -86,6 +95,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     deinit {
         stopTimers()
+        nxdlDownloader.cancel()
     }
 
     // MARK: - UI construction
@@ -146,11 +156,20 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         claimNexonPlugButton.target = self
         claimNexonPlugButton.action = #selector(handleClaimNexonPlug)
 
+        downloadClassicButton.bezelStyle = .rounded
+        downloadClassicButton.target = self
+        downloadClassicButton.action = #selector(handleDownloadClassic)
+
         classicNoticeLabel.alignment = .center
         classicNoticeLabel.font = NSFont.systemFont(ofSize: 11)
         classicNoticeLabel.textColor = NSColor.secondaryLabelColor
 
-        classicContainer = NSStackView(views: [classicNoticeLabel, openClassicWebButton, claimNexonPlugButton])
+        classicContainer = NSStackView(views: [
+            classicNoticeLabel,
+            openClassicWebButton,
+            claimNexonPlugButton,
+            downloadClassicButton,
+        ])
         classicContainer.orientation = .vertical
         classicContainer.alignment = .centerX
         classicContainer.spacing = 8
@@ -253,6 +272,8 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         classicContainer.isHidden = screen != .classic
         otpBlockVisibility(screen == .otp)
         exeContainer.isHidden = !(screen == .qr || screen == .accounts || screen == .otp || screen == .classic)
+        // Classic screen uses primaryButton for picking the executable; hide the duplicate in exeContainer.
+        chooseExeButton.isHidden = screen == .classic
 
         if screen == .games || screen == .accounts {
             tableView.reloadData()
@@ -317,12 +338,19 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             backButton.isHidden = false
         case .classic:
             primaryButton.title = "選擇主程式…"
-            primaryButton.isEnabled = true
+            primaryButton.isEnabled = !isDownloadingClassicClient
             secondaryButton.isHidden = true
             wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
             backButton.isHidden = false
         }
+    }
+
+    private func updateClassicDownloadUI() {
+        let downloading = isDownloadingClassicClient
+        downloadClassicButton.isEnabled = !downloading
+        openClassicWebButton.isEnabled = !downloading
+        claimNexonPlugButton.isEnabled = !downloading
     }
 
     private func restoreLastGame() {
@@ -418,6 +446,85 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         guard let url = GameDefinition.mapleStoryClassic.loginURL else { return }
         NSWorkspace.shared.open(url)
         statusLabel.stringValue = "已開啟新楓之谷：經典版登入網頁"
+    }
+
+    @objc private func handleDownloadClassic() {
+        guard selectedGame?.id == GameDefinition.mapleStoryClassic.id else { return }
+        guard !isDownloadingClassicClient else { return }
+
+        let panel = NSOpenPanel()
+        panel.title = "選擇下載資料夾"
+        panel.message = "新楓之谷：經典版客戶端將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
+        panel.prompt = "下載到此處"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+
+        isDownloadingClassicClient = true
+        classicDownloadStatus = "準備下載…"
+        statusLabel.stringValue = "正在下載新楓之谷：經典版客戶端…"
+        updateButtons()
+
+        let progressWindow = ClassicDownloadProgressWindowController { [weak self] in
+            self?.handleCancelClassicDownload()
+        }
+        classicDownloadProgressWindow = progressWindow
+        progressWindow.apply(update: .message("準備下載…"))
+        progressWindow.show(relativeTo: view.window)
+
+        nxdlDownloader.downloadClassicClient(to: destination, onUpdate: { [weak self] update in
+            DispatchQueue.main.async {
+                self?.classicDownloadProgressWindow?.apply(update: update)
+                if case let .message(message) = update {
+                    self?.classicDownloadStatus = message
+                } else if case let .progress(progress) = update, !progress.statusMessage.isEmpty {
+                    self?.classicDownloadStatus = progress.statusMessage
+                }
+            }
+        }, completion: { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch result {
+                case .success:
+                    if let exePath = self.nxdlDownloader.findClassicExecutable(in: destination),
+                       let game = self.selectedGame {
+                        self.saveExecutablePath(exePath, for: game)
+                        self.statusLabel.stringValue = "下載完成，已設定主程式路徑"
+                        NSLog("經典版下載完成：%@，主程式=%@", destination.path, exePath)
+                    } else {
+                        self.statusLabel.stringValue = "下載完成，請手動選擇 Maplestory_Classic.exe"
+                        NSLog("經典版下載完成：%@（未自動找到主程式）", destination.path)
+                    }
+                case let .failure(error as NxdlDownloaderError):
+                    if case .cancelled = error {
+                        self.statusLabel.stringValue = "下載已取消"
+                    } else {
+                        self.showError(error)
+                        self.statusLabel.stringValue = "下載失敗"
+                    }
+                case let .failure(error):
+                    self.showError(error)
+                    self.statusLabel.stringValue = "下載失敗"
+                }
+                self.finishClassicDownload()
+            }
+        })
+    }
+
+    @objc private func handleCancelClassicDownload() {
+        nxdlDownloader.cancel()
+    }
+
+    private func finishClassicDownload() {
+        isDownloadingClassicClient = false
+        classicDownloadStatus = ""
+        classicDownloadProgressWindow?.closeProgressWindow()
+        classicDownloadProgressWindow = nil
+        updateClassicDownloadUI()
+        updateButtons()
     }
 
     @objc private func handleClaimNexonPlug() {

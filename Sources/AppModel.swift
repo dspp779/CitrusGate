@@ -76,6 +76,8 @@ final class AppModel: ObservableObject {
     }
     @Published private(set) var isDownloadingClassicClient = false
     @Published private(set) var classicDownloadStatus = ""
+    @Published private(set) var classicDownloadProgress = NxdlDownloadProgressState()
+    @Published var showClassicDownloadProgress = false
 
     private let defaults: UserDefaults
     private var pendingClassicPassargTokens: [String]?
@@ -668,12 +670,22 @@ final class AppModel: ObservableObject {
             self.isDownloadingClassicClient = true
             self.isBusy = true
             self.classicDownloadStatus = "準備下載…"
+            self.classicDownloadProgress = NxdlDownloadProgressState(statusMessage: "準備下載…")
+            self.showClassicDownloadProgress = true
             self.statusMessage = "正在下載新楓之谷：經典版客戶端…"
 
             do {
-                try await self.nxdlDownloader.downloadClassicClient(to: destination) { progress in
+                try await self.nxdlDownloader.downloadClassicClient(to: destination) { update in
                     Task { @MainActor in
-                        self.classicDownloadStatus = progress
+                        switch update {
+                        case let .message(message):
+                            self.classicDownloadStatus = message
+                        case let .progress(progress):
+                            self.classicDownloadProgress = progress
+                            if !progress.statusMessage.isEmpty {
+                                self.classicDownloadStatus = progress.statusMessage
+                            }
+                        }
                     }
                 }
 
@@ -700,6 +712,8 @@ final class AppModel: ObservableObject {
             self.isDownloadingClassicClient = false
             self.isBusy = false
             self.classicDownloadStatus = ""
+            self.classicDownloadProgress = NxdlDownloadProgressState()
+            self.showClassicDownloadProgress = false
         }
     }
 

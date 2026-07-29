@@ -12,10 +12,12 @@ App 內顯示名稱為「楓之谷：經典版」。新楓之谷（非經典）�
 | --- | --- |
 | Beanfun OTP（本專案 Modern 版，macOS 13+） | 選擇經典版主程式、開啟網頁登入、接收 `NexonPlug://` 並啟動 |
 | [Cyder](https://github.com/dspp779/CyderBits/releases/latest) | 以 `open -n … --args …` 開啟 `Maplestory_Classic.exe` |
-| 經典版主程式 `Maplestory_Classic.exe` | 遊戲客戶端 |
+| 經典版主程式 `Maplestory_Classic.exe` | 遊戲客戶端（可手動準備，或用 App 內「下載經典版客戶端」） |
 | Beanfun 帳號 | 在官方網頁登入 |
 
 Cyder 下載：<https://github.com/dspp779/CyderBits/releases/latest>
+
+開發／維護用的 nxdl 整合說明（釘選版本、路徑還原、進度解析）見 [`nxdl-classic-download.md`](nxdl-classic-download.md)。
 
 ## 為什麼不用北美官方 MapleStory Launcher？
 

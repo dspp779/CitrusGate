@@ -233,6 +233,20 @@ enum OpenLauncher: Equatable {
     }
 }
 
+enum CyderInstallation {
+    /// True when Launch Services can resolve Cyder 正式版 (`local.cyder.app`).
+    static func isOfficialCyderInstalled(
+        resolvePath: (String) -> String? = { bundleID in
+            NSWorkspace.shared.absolutePathForApplication(withBundleIdentifier: bundleID)
+        }
+    ) -> Bool {
+        guard let path = resolvePath(OpenLauncher.cyderBundleIdentifier), !path.isEmpty else {
+            return false
+        }
+        return true
+    }
+}
+
 enum OpenLaunchArguments {
     static func build(
         executablePath: String,

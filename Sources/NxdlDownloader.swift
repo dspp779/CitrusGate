@@ -154,6 +154,9 @@ final class NxdlDownloader {
     private func ensureBinary(onStatus: @escaping @Sendable (String) -> Void) async throws -> URL {
         let url = binaryURL
         if fileManager.isExecutableFile(atPath: url.path) {
+            // Always clear quarantine before reuse: GateKeeper may still block a
+            // cached binary that retained or regained com.apple.quarantine.
+            try prepareBinaryForExecution(at: url.path)
             return url
         }
 
@@ -171,8 +174,7 @@ final class NxdlDownloader {
             try fileManager.removeItem(at: url)
         }
         try fileManager.moveItem(at: tempURL, to: url)
-        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-        try clearQuarantineIfNeeded(at: url.path)
+        try prepareBinaryForExecution(at: url.path)
 
         guard fileManager.isExecutableFile(atPath: url.path) else {
             throw NxdlDownloaderError.binaryNotExecutable(url.path)
@@ -188,6 +190,9 @@ final class NxdlDownloader {
         onStatus: @escaping @Sendable (String) -> Void
     ) async throws {
         try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+        // Clear again immediately before Process.run in case LaunchServices or
+        // another agent re-applied quarantine after ensureBinary returned.
+        try prepareBinaryForExecution(at: binary.path)
 
         onStatus("正在下載新楓之谷：經典版客戶端…")
 
@@ -278,19 +283,33 @@ final class NxdlDownloader {
         }
     }
 
+    private func prepareBinaryForExecution(at path: String) throws {
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+        try clearQuarantineIfNeeded(at: path)
+    }
+
     private func clearQuarantineIfNeeded(at path: String) throws {
         let length = listxattr(path, nil, 0, 0)
+        guard length >= 0 else {
+            throw NxdlDownloaderError.binaryNotExecutable(path)
+        }
         guard length > 0 else { return }
 
         var buffer = [CChar](repeating: 0, count: length)
-        guard listxattr(path, &buffer, buffer.count, 0) >= 0 else { return }
+        guard listxattr(path, &buffer, buffer.count, 0) >= 0 else {
+            throw NxdlDownloaderError.binaryNotExecutable(path)
+        }
 
         let names = Data(bytes: buffer, count: length)
             .split(separator: 0)
             .compactMap { String(data: Data($0), encoding: .utf8) }
 
         guard names.contains("com.apple.quarantine") else { return }
-        removexattr(path, "com.apple.quarantine", 0)
+        if removexattr(path, "com.apple.quarantine", 0) != 0 {
+            throw NxdlDownloaderError.binaryDownloadFailed(
+                "無法解除 nxdl quarantine：\(path)"
+            )
+        }
         log("已解除 nxdl quarantine：\(path)")
     }
 }

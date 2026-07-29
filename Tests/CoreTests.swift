@@ -22,10 +22,13 @@ enum CoreTests {
         try testQuarantineStatusWithAttribute()
         try testQuarantineRemovalErrorDescription()
         try testNxdlProgressParser()
+        try testNxdlOutputStreamParser()
         try testOpenLauncherArguments()
         try testWindowsPathFilenameNormalizer()
         try testNormalizeWindowsPathFilenamesOnDisk()
-        print("CoreTests: 22 tests passed")
+        try testNxdlBinaryIntegrity()
+        try testNxdlFailureMessage()
+        print("CoreTests: 25 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -381,8 +384,97 @@ enum CoreTests {
         try expect(formatted.contains("3.4 MiB/s"), "speed")
         try expect(formatted.contains("Base.wz"), "file name")
 
-        let plain = NxdlProgressParser.stripANSI("\u{001B}[1mhello\u{001B}[0m")
-        try expect(plain == "hello", "ansi strip")
+        let overallRaw =
+            "⠙ [00:00:14] [=============>--------------------------] 950.77 MiB/2.76 GiB (65.06 MiB/s, ETA 29s)"
+        let overall = try require(NxdlProgressParser.parseOverallProgress(overallRaw), "overall progress")
+        try expect(overall.downloadedText == "950.77 MiB", "overall downloaded")
+        try expect(overall.totalText == "2.76 GiB", "overall total")
+        try expect(overall.speedText == "65.06 MiB/s", "overall speed")
+        try expect(overall.etaText == "ETA 29s", "overall eta")
+        try expect(overall.remainingTimeText == "29 秒", "overall remaining time")
+        try expect(overall.elapsedText == "00:00:14", "overall elapsed")
+
+        let expectedFraction = 950.77 / (2.76 * 1024.0)
+        try expect(abs(overall.fraction - expectedFraction) < 0.000_001, "overall fraction from sizes")
+        try expect(
+            abs(
+                NxdlProgressParser.fraction(
+                    downloadedText: "950.77 MiB",
+                    totalText: "2.76 GiB",
+                    barFallback: "[====>----]"
+                ) - expectedFraction
+            ) < 0.000_001,
+            "fraction helper from sizes"
+        )
+        try expect(
+            NxdlProgressParser.parseByteCount("2.76 GiB") == 2.76 * 1024 * 1024 * 1024,
+            "parse GiB"
+        )
+        try expect(
+            NxdlProgressParser.remainingTimeText(fromETA: "ETA 1m 5s") == "1 分 5 秒",
+            "remaining time minutes and seconds"
+        )
+        try expect(
+            NxdlProgressParser.remainingTimeText(fromETA: "ETA 2h") == "2 小時",
+            "remaining time hours"
+        )
+        try expect(
+            NxdlProgressParser.remainingTimeText(fromETA: "ETA unknown") == "unknown",
+            "remaining time falls back to raw text"
+        )
+
+        let fileRaw =
+            #"  [===>---------------------]  84.00 MiB/586.71 MiB ( 6.88 MiB/s) Maplestory_Classic_Data\StreamingAssets\aa\w\spritesheet.bundle"#
+        let file = try require(NxdlProgressParser.parseFileProgress(fileRaw), "file progress")
+        try expect(file.displayName == "spritesheet.bundle", "file display name")
+        try expect(file.downloadedText == "84.00 MiB", "file downloaded")
+        try expect(file.speedText == "6.88 MiB/s", "file speed")
+
+        let tracker = NxdlProgressTracker()
+        _ = NxdlProgressParser.ingestLine(overallRaw, into: tracker)
+        _ = NxdlProgressParser.ingestLine(fileRaw, into: tracker)
+        try expect(tracker.state.overall != nil, "tracker overall")
+        try expect(tracker.state.currentFileName == "spritesheet.bundle", "tracker current file")
+
+        var oscBuffer = "progress\u{001B}]9;4;4;42\u{001B}\\more"
+        let oscUpdates = NxdlProgressParser.consumeOSC94(from: &oscBuffer)
+        try expect(oscUpdates.count == 1, "osc count")
+        try expect(oscUpdates[0].state == 4, "osc state")
+        try expect(oscUpdates[0].percent == 42, "osc percent")
+        try expect(oscBuffer == "progressmore", "osc stripped from buffer")
+
+        let plain = NxdlProgressParser.stripANSI("\u{001B}[1mhello\u{001B}[0m\u{001B}]9;4;4;7\u{0007}")
+        try expect(plain == "hello", "ansi+osc strip")
+
+        // A per-file line must never be mistaken for the aggregate bar, even when
+        // a redraw glues it in front of the overall line.
+        try expect(NxdlProgressParser.parseOverallProgress(fileRaw) == nil, "file line is not overall")
+        let gluedRaw = "  [===>------] 84.00 MiB/586.71 MiB ( 6.88 MiB/s) a.bundle" + overallRaw
+        let glued = try require(NxdlProgressParser.parseOverallProgress(gluedRaw), "glued overall")
+        try expect(glued.totalText == "2.76 GiB", "glued overall keeps grand total")
+    }
+
+    private static func testNxdlOutputStreamParser() throws {
+        // A PTY emits CRLF; Swift stores "\r\n" as one Character, so splitting on
+        // "\n" or "\r" alone would merge every rendered line into one segment.
+        let frame = "⠙ [00:00:14] [====>-----] 950.77 MiB/2.76 GiB (65.06 MiB/s, ETA 29s)\r\n"
+            + #"  [==>-------] 84.00 MiB/586.71 MiB ( 6.88 MiB/s) Maplestory_Classic_Data\StreamingAssets\spritesheet.bundle"#
+            + "\r\n"
+
+        let parser = NxdlOutputStreamParser()
+        _ = parser.ingest(frame)
+        let overall = try require(parser.state.overall, "stream overall")
+        try expect(overall.totalText == "2.76 GiB", "stream overall total")
+        try expect(overall.downloadedText == "950.77 MiB", "stream overall downloaded")
+        try expect(parser.state.currentFileName == "spritesheet.bundle", "stream current file")
+
+        // Chunk boundaries must not corrupt parsing.
+        let split = NxdlOutputStreamParser()
+        let midpoint = frame.index(frame.startIndex, offsetBy: 40)
+        _ = split.ingest(String(frame[..<midpoint]))
+        _ = split.ingest(String(frame[midpoint...]))
+        try expect(split.state.overall?.totalText == "2.76 GiB", "split chunk overall total")
+        try expect(split.state.currentFileName == "spritesheet.bundle", "split chunk current file")
     }
 
     private static func testOpenLauncherArguments() throws {
@@ -471,6 +563,71 @@ enum CoreTests {
         try expect(!FileManager.default.fileExists(atPath: malformed.path), "malformed name removed")
         let contents = try String(contentsOf: expected, encoding: .utf8)
         try expect(contents == "pak", "file contents preserved")
+    }
+
+    private static func testNxdlBinaryIntegrity() throws {
+        // Empty SHA-256 (known vector).
+        try expect(
+            NxdlBinaryIntegrity.sha256Hex(of: Data())
+                == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "empty sha256"
+        )
+        try expect(
+            NxdlBinaryIntegrity.sha256Hex(of: Data("abc".utf8))
+                == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "abc sha256"
+        )
+        try expect(
+            NxdlDownloader.binarySHA256Hex == NxdlBinaryIntegrity.expectedSHA256Hex,
+            "downloader pin matches integrity constant"
+        )
+        try expect(
+            NxdlBinaryIntegrity.expectedSHA256Hex.count == 64,
+            "sha256 hex length"
+        )
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("beanfunotp-nxdl-hash-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let fileURL = root.appendingPathComponent("sample.bin")
+        try Data("abc".utf8).write(to: fileURL)
+        let fileHash = try NxdlBinaryIntegrity.sha256Hex(ofFileAt: fileURL.path)
+        try expect(
+            fileHash == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "file sha256"
+        )
+
+        do {
+            try NxdlBinaryIntegrity.verifyFile(at: fileURL.path)
+            throw TestFailure(message: "verify should reject non-nxdl payload")
+        } catch let error as NxdlDownloaderError {
+            guard case .binaryChecksumMismatch = error else {
+                throw TestFailure(message: "expected checksum mismatch")
+            }
+        }
+    }
+
+    private static func testNxdlFailureMessage() throws {
+        let preferred = NxdlFailureMessage.preferred(
+            from: [
+                "950.77 MiB/2.76 GiB",
+                "Error: disk full while writing spritesheet.bundle",
+                "nxdl: aborting",
+            ],
+            lastProgressLine: "950.77 MiB/2.76 GiB"
+        )
+        try expect(preferred == "nxdl: aborting", "prefer last error-like line")
+
+        let progressOnly = NxdlFailureMessage.preferred(
+            from: ["Manifest loaded: ok"],
+            lastProgressLine: "100 MiB/2 GiB"
+        )
+        try expect(progressOnly == "100 MiB/2 GiB", "fall back to last progress")
+
+        try expect(NxdlFailureMessage.isErrorLike("Error: boom"), "Error: prefix")
+        try expect(NxdlFailureMessage.isErrorLike("nxdl: nope"), "nxdl: prefix")
+        try expect(!NxdlFailureMessage.isErrorLike("950.77 MiB/2.76 GiB"), "progress is not error")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

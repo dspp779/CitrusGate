@@ -383,9 +383,11 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     }
 
     private func saveExecutablePath(_ path: String, for game: GameDefinition) {
-        executablePath = path
         let key = Self.executablePathPrefix + game.id
         UserDefaults.standard.set(path, forKey: key)
+        if selectedGame?.id == game.id {
+            executablePath = path
+        }
     }
 
     private func updateExePathLabel() {
@@ -471,6 +473,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
         beginGameClientDownload(
+            targetGame: GameDefinition.mapleStoryClassic,
             config: .nxdlClassic,
             destination: destination,
             progressTitle: "下載新楓之谷：經典版",
@@ -496,6 +499,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
         beginGameClientDownload(
+            targetGame: GameDefinition.mapleStory,
             config: .cmsdlMapleStory,
             destination: destination,
             progressTitle: "下載新楓之谷",
@@ -534,6 +538,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     }
 
     private func beginGameClientDownload(
+        targetGame: GameDefinition,
         config: GameClientToolConfig,
         destination: URL,
         progressTitle: String,
@@ -575,6 +580,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                             return
                         }
                         self.startGameClientDownload(
+                            targetGame: targetGame,
                             config: config,
                             to: destination,
                             progressTitle: progressTitle,
@@ -593,6 +599,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     }
 
     private func startGameClientDownload(
+        targetGame: GameDefinition,
         config: GameClientToolConfig,
         to destination: URL,
         progressTitle: String,
@@ -624,9 +631,8 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                 guard let self else { return }
                 switch result {
                 case .success:
-                    if let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination),
-                       let game = self.selectedGame {
-                        self.saveExecutablePath(exePath, for: game)
+                    if let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination) {
+                        self.saveExecutablePath(exePath, for: targetGame)
                         self.statusLabel.stringValue = "下載完成，已設定主程式路徑"
                         NSLog("%@下載完成：%@，主程式=%@", logLabel, destination.path, exePath)
                     } else {

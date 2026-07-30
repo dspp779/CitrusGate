@@ -666,6 +666,7 @@ final class AppModel: ObservableObject {
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
         startGameClientDownload(
+            targetGame: GameDefinition.mapleStoryClassic,
             config: .nxdlClassic,
             destination: destination,
             progressTitle: "下載新楓之谷：經典版",
@@ -691,6 +692,7 @@ final class AppModel: ObservableObject {
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
         startGameClientDownload(
+            targetGame: GameDefinition.mapleStory,
             config: .cmsdlMapleStory,
             destination: destination,
             progressTitle: "下載新楓之谷客戶端",
@@ -734,6 +736,7 @@ final class AppModel: ObservableObject {
     }
 
     private func startGameClientDownload(
+        targetGame: GameDefinition,
         config: GameClientToolConfig,
         destination: URL,
         progressTitle: String,
@@ -793,7 +796,7 @@ final class AppModel: ObservableObject {
                 }
 
                 if let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination) {
-                    self.executablePath = exePath
+                    self.saveExecutablePath(exePath, for: targetGame)
                     self.statusMessage = "下載完成，已設定主程式路徑"
                     self.appendLog("\(logLabel)下載完成：\(destination.path)，主程式=\(exePath)")
                 } else {
@@ -1036,6 +1039,13 @@ final class AppModel: ObservableObject {
 
     private func executablePathKey(for game: GameDefinition) -> String {
         Self.executablePathPrefix + game.id
+    }
+
+    private func saveExecutablePath(_ path: String, for game: GameDefinition) {
+        defaults.set(path, forKey: executablePathKey(for: game))
+        if selectedGame?.id == game.id {
+            executablePath = path
+        }
     }
 
     private func resetGameSession() {

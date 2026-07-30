@@ -66,35 +66,17 @@ try testClientCheckJSONParser()
 
 Bump printed count by +2 (currently 25 → 27).
 
-```swift
-private static func testDiskSpaceGate() throws {
-    let gib: UInt64 = 1024 * 1024 * 1024
-    let total: UInt64 = 10 * gib
-    // comfortable = 10.5 GiB, minimum = 11 GiB → warning band empty
-    try expect(DiskSpaceGate.evaluate(totalBytes: total, freeBytes: 11 * gib).verdict == .ok, "small: at minimum is ok via comfortable? wait")
-}
-```
-
-**Correct expectations for `total = 10 GiB`:**
-- `comfortable = 10.5 GiB`, `minimum = 11 GiB`
-- `free = 12 GiB` → `.ok`
-- `free = 11 GiB` → `.ok` (11 ≥ 10.5)
-- `free = 10.7 GiB` → `.blocked` (10.7 < 11)
-- `free = 10 GiB` → `.blocked`
-
-**For `total = 50 GiB`:**
-- `comfortable = 52.5 GiB`, `minimum = 51 GiB`
-- `free = 53 GiB` → `.ok`
-- `free = 52 GiB` → `.warn`
-- `free = 51 GiB` → `.warn`
-- `free = 50.5 GiB` → `.blocked`
+**For `total = 10 GiB`:** `comfortable = 10.5 GiB`, `minimum = 11 GiB` (warning band empty).  
+**For `total = 50 GiB`:** `comfortable = 52.5 GiB`, `minimum = 51 GiB`.
 
 ```swift
 private static func testDiskSpaceGate() throws {
     let gib: UInt64 = 1_024 * 1_024 * 1_024
 
-    let small = DiskSpaceGate.evaluate(totalBytes: 10 * gib, freeBytes: 12 * gib)
-    try expect(small.verdict == .ok, "small plenty → ok")
+    try expect(
+        DiskSpaceGate.evaluate(totalBytes: 10 * gib, freeBytes: 12 * gib).verdict == .ok,
+        "small plenty → ok"
+    )
     try expect(
         DiskSpaceGate.evaluate(totalBytes: 10 * gib, freeBytes: 11 * gib).verdict == .ok,
         "small at +1GiB still ≥ 1.05 → ok"
@@ -557,7 +539,8 @@ After panel OK, before setting busy/download:
 
 ```swift
 // ensure tool + probe (can show brief status)
-let total = try await probe… 
+// ensureBinary + probeTotalSize (async wrappers on downloader)
+let total = try await self.nxdlDownloader.probeTotalSize(config: .nxdlClassic) { _ in } 
 let free = try VolumeFreeSpace.freeBytes(forDirectory: destination)
 let evaluation = DiskSpaceGate.evaluate(totalBytes: total, freeBytes: free)
 guard presentDiskGate(evaluation: evaluation) else { return }

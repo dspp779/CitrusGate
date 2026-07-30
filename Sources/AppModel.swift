@@ -74,7 +74,7 @@ final class AppModel: ObservableObject {
             defaults.set(advancedLaunchCommandStyle.rawValue, forKey: Self.advancedLaunchCommandStyleKey)
         }
     }
-    @Published private(set) var isDownloadingClassicClient = false
+    @Published private(set) var isDownloadingGameClient = false
     @Published private(set) var classicDownloadStatus = ""
     @Published private(set) var classicDownloadProgress = NxdlDownloadProgressState()
     @Published var showClassicDownloadProgress = false
@@ -651,7 +651,7 @@ final class AppModel: ObservableObject {
 
     func downloadClassicClient() {
         guard selectedGame?.id == GameDefinition.mapleStoryClassic.id else { return }
-        guard !isDownloadingClassicClient else { return }
+        guard !isDownloadingGameClient else { return }
 
         let panel = NSOpenPanel()
         panel.title = "選擇下載資料夾"
@@ -664,18 +664,115 @@ final class AppModel: ObservableObject {
 
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
+        startGameClientDownload(
+            config: .nxdlClassic,
+            destination: destination,
+            statusWhileDownloading: "正在下載新楓之谷：經典版客戶端…",
+            missingExecutableHint: "下載完成，請手動選擇 Maplestory_Classic.exe",
+            logLabel: "經典版"
+        )
+    }
+
+    func downloadMapleStoryClient() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else { return }
+        guard !isDownloadingGameClient else { return }
+
+        let panel = NSOpenPanel()
+        panel.title = "選擇下載資料夾"
+        panel.message = "新楓之谷客戶端將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
+        panel.prompt = "下載到此處"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+
+        startGameClientDownload(
+            config: .cmsdlMapleStory,
+            destination: destination,
+            statusWhileDownloading: "正在下載新楓之谷客戶端…",
+            missingExecutableHint: "下載完成，請手動選擇 MapleStory.exe",
+            logLabel: "新楓之谷"
+        )
+    }
+
+    func cancelClassicDownload() {
+        nxdlDownloader.cancel()
+        classicDownloadTask?.cancel()
+    }
+
+    private func presentDiskGate(evaluation: DiskSpaceEvaluation) -> Bool {
+        let needed = ByteCountFormat.string(bytes: evaluation.totalBytes)
+        let free = ByteCountFormat.string(bytes: evaluation.freeBytes)
+        let minimum = ByteCountFormat.string(bytes: evaluation.minimumBytes)
+        switch evaluation.verdict {
+        case .ok:
+            return true
+        case .blocked:
+            let alert = NSAlert()
+            alert.messageText = "磁碟空間不足"
+            alert.informativeText =
+                "下載約需 \(needed)，目的地磁碟剩餘 \(free)。\n至少需要 \(minimum)（總量 + 1 GB）才能下載。"
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "確定")
+            alert.runModal()
+            return false
+        case .warn:
+            let alert = NSAlert()
+            alert.messageText = "磁碟空間偏低"
+            alert.informativeText =
+                "下載約需 \(needed)，目的地磁碟剩餘 \(free)。\n建議至少保留約 \(ByteCountFormat.string(bytes: evaluation.comfortableBytes))（總量的 105%）。仍要繼續嗎？"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "仍要下載")
+            alert.addButton(withTitle: "取消")
+            return alert.runModal() == .alertFirstButtonReturn
+        }
+    }
+
+    private func startGameClientDownload(
+        config: GameClientToolConfig,
+        destination: URL,
+        statusWhileDownloading: String,
+        missingExecutableHint: String,
+        logLabel: String
+    ) {
         classicDownloadTask?.cancel()
         classicDownloadTask = Task { [weak self] in
             guard let self else { return }
-            self.isDownloadingClassicClient = true
+            self.isDownloadingGameClient = true
             self.isBusy = true
-            self.classicDownloadStatus = "準備下載…"
-            self.classicDownloadProgress = NxdlDownloadProgressState(statusMessage: "準備下載…")
-            self.showClassicDownloadProgress = true
-            self.statusMessage = "正在下載新楓之谷：經典版客戶端…"
+            self.statusMessage = "正在檢查下載大小…"
+            self.classicDownloadStatus = "正在檢查下載大小…"
+            self.classicDownloadProgress = NxdlDownloadProgressState(statusMessage: "正在檢查下載大小…")
+            // Progress sheet opens only after the disk gate passes.
 
             do {
-                try await self.nxdlDownloader.downloadClassicClient(to: destination) { update in
+                let total = try await self.nxdlDownloader.probeTotalSize(config: config) { update in
+                    Task { @MainActor in
+                        if case let .message(message) = update {
+                            self.statusMessage = message
+                            self.classicDownloadStatus = message
+                        }
+                    }
+                }
+                let free = try VolumeFreeSpace.freeBytes(forDirectory: destination)
+                let evaluation = DiskSpaceGate.evaluate(totalBytes: total, freeBytes: free)
+                guard self.presentDiskGate(evaluation: evaluation) else {
+                    self.statusMessage = "已取消下載"
+                    self.isDownloadingGameClient = false
+                    self.isBusy = false
+                    self.classicDownloadStatus = ""
+                    self.classicDownloadProgress = NxdlDownloadProgressState()
+                    return
+                }
+
+                self.classicDownloadStatus = "準備下載…"
+                self.classicDownloadProgress = NxdlDownloadProgressState(statusMessage: "準備下載…")
+                self.showClassicDownloadProgress = true
+                self.statusMessage = statusWhileDownloading
+
+                try await self.nxdlDownloader.downloadClient(config: config, to: destination) { update in
                     Task { @MainActor in
                         switch update {
                         case let .message(message):
@@ -689,13 +786,13 @@ final class AppModel: ObservableObject {
                     }
                 }
 
-                if let exePath = self.nxdlDownloader.findClassicExecutable(in: destination) {
+                if let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination) {
                     self.executablePath = exePath
                     self.statusMessage = "下載完成，已設定主程式路徑"
-                    self.appendLog("經典版下載完成：\(destination.path)，主程式=\(exePath)")
+                    self.appendLog("\(logLabel)下載完成：\(destination.path)，主程式=\(exePath)")
                 } else {
-                    self.statusMessage = "下載完成，請手動選擇 Maplestory_Classic.exe"
-                    self.appendLog("經典版下載完成：\(destination.path)（未自動找到主程式）")
+                    self.statusMessage = missingExecutableHint
+                    self.appendLog("\(logLabel)下載完成：\(destination.path)（未自動找到主程式）")
                 }
             } catch is CancellationError {
                 self.statusMessage = "下載已取消"
@@ -709,17 +806,12 @@ final class AppModel: ObservableObject {
                 self.present(error)
             }
 
-            self.isDownloadingClassicClient = false
+            self.isDownloadingGameClient = false
             self.isBusy = false
             self.classicDownloadStatus = ""
             self.classicDownloadProgress = NxdlDownloadProgressState()
             self.showClassicDownloadProgress = false
         }
-    }
-
-    func cancelClassicDownload() {
-        nxdlDownloader.cancel()
-        classicDownloadTask?.cancel()
     }
 
     func handleOpenedURL(_ url: URL, fromColdStart: Bool = false) {

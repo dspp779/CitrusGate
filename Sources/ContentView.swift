@@ -56,7 +56,7 @@ struct ContentView: View {
             set: { _ in }
         )) {
             ClassicDownloadProgressView(model: model)
-                .interactiveDismissDisabled(model.isDownloadingClassicClient)
+                .interactiveDismissDisabled(model.isDownloadingGameClient)
         }
     }
 
@@ -170,6 +170,15 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             }
+            if model.selectedGame?.id == GameDefinition.mapleStory.id {
+                Button {
+                    model.downloadMapleStoryClient()
+                } label: {
+                    Label("下載新楓之谷客戶端", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.isDownloadingGameClient || model.isBusy)
+            }
             ExecutablePickerSection(model: model)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -254,7 +263,7 @@ struct ContentView: View {
                     Label("下載經典版客戶端", systemImage: "arrow.down.circle")
                 }
                 .buttonStyle(.bordered)
-                .disabled(model.isBusy)
+                .disabled(model.isDownloadingGameClient || model.isBusy)
             }
             Button {
                 model.openClassicLoginPage()
@@ -304,6 +313,15 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(model.isBusy)
+                }
+                if model.selectedGame?.id == GameDefinition.mapleStory.id {
+                    Button {
+                        model.downloadMapleStoryClient()
+                    } label: {
+                        Label("下載新楓之谷客戶端", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isDownloadingGameClient || model.isBusy)
                 }
                 ExecutablePickerSection(model: model)
             }

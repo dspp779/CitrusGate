@@ -77,6 +77,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var isDownloadingGameClient = false
     @Published private(set) var classicDownloadStatus = ""
     @Published private(set) var classicDownloadProgress = NxdlDownloadProgressState()
+    @Published private(set) var gameClientDownloadTitle = ""
     @Published var showClassicDownloadProgress = false
 
     private let defaults: UserDefaults
@@ -667,6 +668,7 @@ final class AppModel: ObservableObject {
         startGameClientDownload(
             config: .nxdlClassic,
             destination: destination,
+            progressTitle: "下載新楓之谷：經典版",
             statusWhileDownloading: "正在下載新楓之谷：經典版客戶端…",
             missingExecutableHint: "下載完成，請手動選擇 Maplestory_Classic.exe",
             logLabel: "經典版"
@@ -691,6 +693,7 @@ final class AppModel: ObservableObject {
         startGameClientDownload(
             config: .cmsdlMapleStory,
             destination: destination,
+            progressTitle: "下載新楓之谷客戶端",
             statusWhileDownloading: "正在下載新楓之谷客戶端…",
             missingExecutableHint: "下載完成，請手動選擇 MapleStory.exe",
             logLabel: "新楓之谷"
@@ -733,6 +736,7 @@ final class AppModel: ObservableObject {
     private func startGameClientDownload(
         config: GameClientToolConfig,
         destination: URL,
+        progressTitle: String,
         statusWhileDownloading: String,
         missingExecutableHint: String,
         logLabel: String
@@ -740,6 +744,7 @@ final class AppModel: ObservableObject {
         classicDownloadTask?.cancel()
         classicDownloadTask = Task { [weak self] in
             guard let self else { return }
+            self.gameClientDownloadTitle = progressTitle
             self.isDownloadingGameClient = true
             self.isBusy = true
             self.statusMessage = "正在檢查下載大小…"
@@ -764,6 +769,7 @@ final class AppModel: ObservableObject {
                     self.isBusy = false
                     self.classicDownloadStatus = ""
                     self.classicDownloadProgress = NxdlDownloadProgressState()
+                    self.gameClientDownloadTitle = ""
                     return
                 }
 
@@ -810,6 +816,7 @@ final class AppModel: ObservableObject {
             self.isBusy = false
             self.classicDownloadStatus = ""
             self.classicDownloadProgress = NxdlDownloadProgressState()
+            self.gameClientDownloadTitle = ""
             self.showClassicDownloadProgress = false
         }
     }

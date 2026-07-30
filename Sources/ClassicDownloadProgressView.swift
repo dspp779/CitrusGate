@@ -5,7 +5,7 @@ struct ClassicDownloadProgressView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("下載新楓之谷：經典版")
+            Text(model.gameClientDownloadTitle)
                 .font(.title3.bold())
 
             if let overall = model.classicDownloadProgress.overall {

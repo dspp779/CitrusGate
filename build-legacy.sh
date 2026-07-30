@@ -30,7 +30,9 @@ export TMPDIR="$build_dir/tmp"
 mkdir -p "$build_dir" "$module_cache" "$frameworks_dir" "$TMPDIR"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources/GameImages"
 
-sources=("$source_dir"/*.swift "$project_dir/Sources/NxdlDownloader.swift")
+sources=("$source_dir"/*.swift \
+  "$project_dir/Sources/NxdlDownloader.swift" \
+  "$project_dir/Sources/GameClientDiskGate.swift")
 
 swiftc -swift-version 5 \
     -sdk "$sdk" \

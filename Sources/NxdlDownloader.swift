@@ -499,16 +499,16 @@ enum NxdlDownloaderError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case let .binaryDownloadFailed(message):
-            return "無法下載 nxdl 工具：\(message)"
+            return "無法下載客戶端工具：\(message)"
         case let .binaryNotExecutable(path):
-            return "nxdl 工具無法執行：\(path)"
+            return "客戶端工具無法執行：\(path)"
         case let .binaryChecksumMismatch(expected, actual):
-            return "nxdl 工具校驗失敗（預期 \(expected)，實際 \(actual)）"
+            return "客戶端工具校驗失敗（預期 \(expected)，實際 \(actual)）"
         case let .processFailed(code, output):
             if output.isEmpty {
-                return "nxdl 下載失敗（結束代碼 \(code)）"
+                return "客戶端工具失敗（結束代碼 \(code)）"
             }
-            return "nxdl 下載失敗（結束代碼 \(code)）：\(output)"
+            return "客戶端工具失敗（結束代碼 \(code)）：\(output)"
         case let .pathNormalizeFailed(message):
             return "無法還原下載檔案路徑：\(message)"
         case .cancelled:
@@ -634,16 +634,26 @@ final class NxdlDownloader {
         self.log = log
     }
 
-    var supportDirectory: URL {
+    func supportDirectory(for config: GameClientToolConfig) -> URL {
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.temporaryDirectory
         return base
             .appendingPathComponent(Self.applicationSupportFolderName, isDirectory: true)
-            .appendingPathComponent("nxdl", isDirectory: true)
+            .appendingPathComponent(config.cacheFolderName, isDirectory: true)
     }
 
+    func binaryURL(for config: GameClientToolConfig) -> URL {
+        supportDirectory(for: config).appendingPathComponent(config.binaryFileName)
+    }
+
+    /// nxdl classic cache shortcut (existing callers / tests).
+    var supportDirectory: URL {
+        supportDirectory(for: .nxdlClassic)
+    }
+
+    /// nxdl classic binary shortcut (existing callers / tests).
     var binaryURL: URL {
-        supportDirectory.appendingPathComponent("nxdl_darwin")
+        binaryURL(for: .nxdlClassic)
     }
 
     func cancel() {
@@ -651,6 +661,33 @@ final class NxdlDownloader {
     }
 
     func downloadClassicClient(
+        to destination: URL,
+        onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        downloadClient(
+            config: .nxdlClassic,
+            to: destination,
+            onUpdate: onUpdate,
+            completion: completion
+        )
+    }
+
+    func downloadMapleStoryClient(
+        to destination: URL,
+        onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        downloadClient(
+            config: .cmsdlMapleStory,
+            to: destination,
+            onUpdate: onUpdate,
+            completion: completion
+        )
+    }
+
+    func downloadClient(
+        config: GameClientToolConfig,
         to destination: URL,
         onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
@@ -666,13 +703,18 @@ final class NxdlDownloader {
             onUpdate(update)
         }
 
-        ensureBinary(onUpdate: track) { [weak self] result in
+        ensureBinary(config: config, onUpdate: track) { [weak self] result in
             guard let self else { return }
             switch result {
             case let .failure(error):
                 completion(.failure(error))
             case let .success(binary):
-                self.runDownload(binary: binary, destination: destination, onUpdate: track) { downloadResult in
+                self.runDownload(
+                    config: config,
+                    binary: binary,
+                    destination: destination,
+                    onUpdate: track
+                ) { downloadResult in
                     switch downloadResult {
                     case let .failure(error):
                         completion(.failure(error))
@@ -704,13 +746,60 @@ final class NxdlDownloader {
         }
     }
 
+    /// Ensures the tool binary, then runs `--check --json` over a pipe (no PTY)
+    /// and returns parsed `total_size`.
+    func probeTotalSize(
+        config: GameClientToolConfig,
+        onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
+        completion: @escaping (Result<UInt64, Error>) -> Void
+    ) {
+        ensureBinary(config: config, onUpdate: onUpdate) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case let .failure(error):
+                completion(.failure(error))
+            case let .success(binary):
+                self.runCheck(config: config, binary: binary, onUpdate: onUpdate, completion: completion)
+            }
+        }
+    }
+
     @available(macOS 10.15, *)
     func downloadClassicClient(
         to destination: URL,
         onUpdate: @escaping @Sendable (NxdlDownloadUpdate) -> Void
     ) async throws {
+        try await downloadClient(config: .nxdlClassic, to: destination, onUpdate: onUpdate)
+    }
+
+    @available(macOS 10.15, *)
+    func downloadMapleStoryClient(
+        to destination: URL,
+        onUpdate: @escaping @Sendable (NxdlDownloadUpdate) -> Void
+    ) async throws {
+        try await downloadClient(config: .cmsdlMapleStory, to: destination, onUpdate: onUpdate)
+    }
+
+    @available(macOS 10.15, *)
+    func downloadClient(
+        config: GameClientToolConfig,
+        to destination: URL,
+        onUpdate: @escaping @Sendable (NxdlDownloadUpdate) -> Void
+    ) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            downloadClassicClient(to: destination, onUpdate: onUpdate) { result in
+            downloadClient(config: config, to: destination, onUpdate: onUpdate) { result in
+                continuation.resume(with: result)
+            }
+        }
+    }
+
+    @available(macOS 10.15, *)
+    func probeTotalSize(
+        config: GameClientToolConfig,
+        onUpdate: @escaping @Sendable (NxdlDownloadUpdate) -> Void
+    ) async throws -> UInt64 {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<UInt64, Error>) in
+            probeTotalSize(config: config, onUpdate: onUpdate) { result in
                 continuation.resume(with: result)
             }
         }
@@ -778,7 +867,15 @@ final class NxdlDownloader {
     }
 
     func findClassicExecutable(in root: URL) -> String? {
-        let direct = root.appendingPathComponent(Self.classicExecutableName).path
+        findPrimaryExecutable(config: .nxdlClassic, in: root)
+    }
+
+    func findPrimaryExecutable(config: GameClientToolConfig, in root: URL) -> String? {
+        findExecutable(named: config.primaryExecutableName, in: root)
+    }
+
+    func findExecutable(named name: String, in root: URL) -> String? {
+        let direct = root.appendingPathComponent(name).path
         if fileManager.isExecutableFile(atPath: direct) || fileManager.fileExists(atPath: direct) {
             return direct
         }
@@ -792,7 +889,7 @@ final class NxdlDownloader {
         }
 
         for case let fileURL as URL in enumerator {
-            if fileURL.lastPathComponent.caseInsensitiveCompare(Self.classicExecutableName) == .orderedSame {
+            if fileURL.lastPathComponent.caseInsensitiveCompare(name) == .orderedSame {
                 return fileURL.path
             }
             if fileURL.pathComponents.count - root.pathComponents.count > 4 {
@@ -803,13 +900,15 @@ final class NxdlDownloader {
     }
 
     private func ensureBinary(
+        config: GameClientToolConfig,
         onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
         completion: @escaping (Result<URL, Error>) -> Void
     ) {
-        let url = binaryURL
+        let url = binaryURL(for: config)
+        let supportDir = supportDirectory(for: config)
         if fileManager.isExecutableFile(atPath: url.path) {
             do {
-                try NxdlBinaryIntegrity.verifyFile(at: url.path)
+                try NxdlBinaryIntegrity.verifyFile(at: url.path, expectedSHA256Hex: config.sha256Hex)
                 // Always clear quarantine before reuse: GateKeeper may still block a
                 // cached binary that retained or regained com.apple.quarantine.
                 try prepareBinaryForExecution(at: url.path)
@@ -817,7 +916,7 @@ final class NxdlDownloader {
                 return
             } catch let error as NxdlDownloaderError {
                 if case .binaryChecksumMismatch = error {
-                    log("快取的 nxdl 校驗失敗，將重新下載：\(error.localizedDescription)")
+                    log("快取的 \(config.binaryFileName) 校驗失敗，將重新下載：\(error.localizedDescription)")
                     try? fileManager.removeItem(at: url)
                     // Fall through to download.
                 } else {
@@ -830,15 +929,15 @@ final class NxdlDownloader {
             }
         }
 
-        onUpdate(.message("正在下載 nxdl 工具（\(Self.releaseTag)）…"))
+        onUpdate(.message("正在下載 \(config.binaryFileName)（\(config.releaseTag)）…"))
         do {
-            try fileManager.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: supportDir, withIntermediateDirectories: true)
         } catch {
             completion(.failure(error))
             return
         }
 
-        let task = session.downloadTask(with: Self.binaryRemoteURL) { [weak self] tempURL, response, error in
+        let task = session.downloadTask(with: config.binaryRemoteURL) { [weak self] tempURL, response, error in
             guard let self else { return }
             if let error {
                 completion(.failure(error))
@@ -857,7 +956,7 @@ final class NxdlDownloader {
             }
 
             do {
-                try NxdlBinaryIntegrity.verifyFile(at: tempURL.path)
+                try NxdlBinaryIntegrity.verifyFile(at: tempURL.path, expectedSHA256Hex: config.sha256Hex)
 
                 if self.fileManager.fileExists(atPath: url.path) {
                     try self.fileManager.removeItem(at: url)
@@ -870,7 +969,7 @@ final class NxdlDownloader {
                     return
                 }
 
-                self.log("nxdl 工具已就緒：\(url.path)")
+                self.log("\(config.binaryFileName) 已就緒：\(url.path)")
                 completion(.success(url))
             } catch {
                 try? self.fileManager.removeItem(at: url)
@@ -880,7 +979,100 @@ final class NxdlDownloader {
         task.resume()
     }
 
+    private func runCheck(
+        config: GameClientToolConfig,
+        binary: URL,
+        onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
+        completion: @escaping (Result<UInt64, Error>) -> Void
+    ) {
+        do {
+            try prepareBinaryForExecution(at: binary.path)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        onUpdate(.message("正在查詢客戶端大小…"))
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        let process = Process()
+        process.launchPath = binary.path
+        process.currentDirectoryPath = supportDirectory(for: config).path
+        process.arguments = config.checkArguments
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        runningProcess = process
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            defer { self?.runningProcess = nil }
+
+            process.launch()
+
+            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+
+            if process.terminationReason == .uncaughtSignal {
+                completion(.failure(NxdlDownloaderError.cancelled))
+                return
+            }
+
+            let stdoutText = String(data: stdoutData, encoding: .utf8) ?? String(decoding: stdoutData, as: UTF8.self)
+            let stderrText = String(data: stderrData, encoding: .utf8) ?? String(decoding: stderrData, as: UTF8.self)
+
+            if process.terminationStatus != 0 {
+                let cleaned = NxdlProgressParser.stripANSI(stderrText.isEmpty ? stdoutText : stderrText)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let detail = cleaned.isEmpty ? "無法取得客戶端大小" : "無法取得客戶端大小：\(cleaned)"
+                completion(.failure(NxdlDownloaderError.processFailed(process.terminationStatus, detail)))
+                return
+            }
+
+            guard let jsonText = Self.extractJSONObjectText(from: stdoutText)
+                ?? Self.extractJSONObjectText(from: stderrText)
+            else {
+                completion(.failure(NxdlDownloaderError.processFailed(
+                    process.terminationStatus,
+                    "無法取得客戶端大小（找不到 JSON）"
+                )))
+                return
+            }
+
+            do {
+                let total = try ClientCheckJSONParser.totalSizeBytes(fromJSONText: jsonText)
+                completion(.success(total))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    /// Prefer a whole JSON object line; fall back to first `{`…last `}` span.
+    private static func extractJSONObjectText(from raw: String) -> String? {
+        let cleaned = NxdlProgressParser.stripANSI(raw)
+        let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("{"), trimmed.contains("}") {
+            return trimmed
+        }
+        for line in cleaned.components(separatedBy: .newlines) {
+            let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.hasPrefix("{"), t.contains("total_size") {
+                return t
+            }
+        }
+        guard let start = cleaned.firstIndex(of: "{"),
+              let end = cleaned.lastIndex(of: "}"),
+              start < end
+        else {
+            return nil
+        }
+        return String(cleaned[start...end])
+    }
+
     private func runDownload(
+        config: GameClientToolConfig,
         binary: URL,
         destination: URL,
         onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
@@ -888,7 +1080,7 @@ final class NxdlDownloader {
     ) {
         do {
             try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
-            // Clear again immediately before Process.run in case LaunchServices or
+            // Clear again immediately before Process.launch in case LaunchServices or
             // another agent re-applied quarantine after ensureBinary returned.
             try prepareBinaryForExecution(at: binary.path)
         } catch {
@@ -896,7 +1088,7 @@ final class NxdlDownloader {
             return
         }
 
-        onUpdate(.message("正在下載新楓之谷：經典版客戶端…"))
+        onUpdate(.message(Self.downloadStatusMessage(for: config)))
 
         // indicatif only emits TUI / OSC 9;4 progress when stdout is a TTY.
         // A pipe gets status text on stdout and no live progress — use a PTY.
@@ -910,8 +1102,8 @@ final class NxdlDownloader {
 
         let process = Process()
         process.launchPath = binary.path
-        process.currentDirectoryPath = supportDirectory.path
-        process.arguments = [Self.gameAlias, "--download", destination.path]
+        process.currentDirectoryPath = supportDirectory(for: config).path
+        process.arguments = config.downloadArguments(destinationPath: destination.path)
         var environment = ProcessInfo.processInfo.environment
         environment["TERM"] = "xterm-256color"
         environment["COLORTERM"] = "truecolor"
@@ -1013,6 +1205,16 @@ final class NxdlDownloader {
         pty.slave.closeFile()
     }
 
+    private static func downloadStatusMessage(for config: GameClientToolConfig) -> String {
+        if config == .nxdlClassic {
+            return "正在下載新楓之谷：經典版客戶端…"
+        }
+        if config == .cmsdlMapleStory {
+            return "正在下載新楓之谷客戶端…"
+        }
+        return "正在下載遊戲客戶端…"
+    }
+
     /// Returns the longest UTF-8 prefix of `buffer`, leaving incomplete trailing
     /// bytes in place for the next read.
     private static func drainDecodableUTF8(from buffer: inout Data) -> String {
@@ -1076,9 +1278,9 @@ final class NxdlDownloader {
         guard names.contains("com.apple.quarantine") else { return }
         if removexattr(path, "com.apple.quarantine", 0) != 0 {
             throw NxdlDownloaderError.binaryDownloadFailed(
-                "無法解除 nxdl quarantine：\(path)"
+                "無法解除 quarantine：\(path)"
             )
         }
-        log("已解除 nxdl quarantine：\(path)")
+        log("已解除 quarantine：\(path)")
     }
 }

@@ -1,6 +1,6 @@
 # nxdl 與新楓之谷：經典版下載
 
-最後更新：2026-07-29
+最後更新：2026-07-30
 
 本文說明 Beanfun OTP 如何用 [nxdl](https://github.com/HikariCalyx/nxdl) 下載經典版客戶端，以及整合時要注意的路徑問題與進度取得方式。
 
@@ -43,6 +43,36 @@ Beanfun OTP **不**內嵌 nxdl 原始碼；執行時會下載並快取固定版�
    chmod +x ./nxdl_darwin
    ```
 3. 進度條（TUI／OSC）只有在 **stdout 是 TTY** 時才會出現；把輸出導向 pipe／檔案時通常只剩狀態文字、沒有即時進度。
+
+---
+
+## 磁碟空間檢查（下載前）
+
+經典版與新楓之谷下載**共用**同一套三級規則。下載前先執行 `--check --json` 取得 `total_size`，再與目的地磁碟的可用空間比較：
+
+```bash
+./nxdl_darwin tms_cw --check --json
+```
+
+`--check --json` 範例輸出：
+
+```json
+{"appid":"2982@2141","game_name":"新楓之谷：經典版",...,"total_size":2962637533}
+```
+
+App 只解析 `total_size`（位元組）；解析失敗則不開始下載。
+
+| 條件 | 行為 |
+| --- | --- |
+| 可用空間 ≥ `total_size × 1.05` | 直接下載；**不**顯示警告 |
+| `total_size + 1 GiB` ≤ 可用空間 < `total_size × 1.05` | 警告對話框，可選 **「仍要下載」** 或取消 |
+| 可用空間 < `total_size + 1 GiB` | **阻擋**下載；僅顯示錯誤，無法繼續 |
+
+其中 `1 GiB = 1024³` 位元組。實作見 `Sources/GameClientDiskGate.swift` 的 `DiskSpaceGate.evaluate`。
+
+當 `total_size < 20 GiB` 時，`× 1.05` 小於 `+ 1 GiB`，中間警告帶為空；僅剩「直接下載」與「硬阻擋」兩種結果。
+
+新楓之谷 cmsdl 的 `--check --json` 與相同規則見 [`cmsdl-maplestory-download.md`](cmsdl-maplestory-download.md#磁碟空間檢查下載前)。
 
 ---
 
@@ -170,6 +200,16 @@ indicatif 在非 TTY 會關閉即時進度。因此 `NxdlDownloader` 以 `openpt
 確保 nxdl_darwin（釘選版＋SHA-256）就緒並清 quarantine
         │
         ▼
+執行：nxdl_darwin tms_cw --check --json → total_size
+        │
+        ▼
+讀取目的地磁碟可用空間 → 磁碟空間檢查（ok / warn / blocked）
+        │
+        ├─ blocked → 錯誤提示；停止
+        ├─ warn → 確認「仍要下載」；取消則停止
+        └─ ok → 繼續
+        │
+        ▼
 PTY 執行：nxdl_darwin tms_cw --download <dir>
         │
         ├─ 解析 TUI → 進度對話框（總量／速度／預估剩餘時間）
@@ -186,8 +226,9 @@ normalizeWindowsPathFilenames（\ → 真實目錄；保留整體進度）
 | 檔案 | 角色 |
 | --- | --- |
 | `Sources/NxdlDownloader.swift` | 下載、PTY、TUI 解析、路徑還原 |
+| `Sources/GameClientDiskGate.swift` | `--check --json` 解析、磁碟空間三級判定、可用空間讀取 |
 | `Sources/ClassicDownloadProgressView.swift` | Modern 進度 sheet |
 | `Legacy/Sources/ClassicDownloadProgressWindow.swift` | Legacy 進度視窗 |
-| `Sources/AppModel.swift` / `Legacy/Sources/AppController.swift` | 觸發下載與取消 |
+| `Sources/AppModel.swift` / `Legacy/Sources/AppController.swift` | 觸發下載、磁碟 gate 對話框與取消 |
 
 玩家操作步驟見 [`macos-player-guide-classic.md`](macos-player-guide-classic.md)。

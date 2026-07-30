@@ -1,6 +1,6 @@
 # 在 macOS 玩新楓之谷（玩家教學）
 
-最後更新：2026-07-24
+最後更新：2026-07-30
 
 本教學依實際可玩流程整理，目標是讓一般玩家能在 Apple Silicon／Intel Mac 上安裝並啟動**新楓之谷**（台灣 Beanfun 版）。這不是官方支援路徑，遊戲與登入服務隨時可能變更。
 
@@ -13,7 +13,7 @@
 | Beanfun OTP（本專案 Modern 版，macOS 13+） | QR 登入取得 OTP，並啟動遊戲 |
 | 美版 [MapleStory Launcher](https://www.nexon.com/maplestory/) | 跑新楓之谷的官方 OEM Wine（CrossOver 25／Wine 10）與 bottle |
 | [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)（可選） | 不想裝北美 Nexon Launcher 時，可用此分支版 Cyder 跑**新楓之谷**（oem25；**不能**開經典版） |
-| [台灣官方新楓之谷主程式](https://maplestory.beanfun.com/download) | 下載 `MapleStory.exe`（手動下載可略過橘子遊戲管理器） |
+| [台灣官方新楓之谷主程式](https://maplestory.beanfun.com/download) | 下載 `MapleStory.exe`（手動下載可略過橘子遊戲管理器；App 內亦可一鍵下載，見下方） |
 | Beanfun 帳號 | 登入憑證來源 |
 
 Cyder 下載（經典版／正式版）：<https://github.com/dspp779/CyderBits/releases/latest>
@@ -157,9 +157,10 @@ wine --bottle maplestory \
 
 ## 步驟 3：取得並確認新楓之谷主程式
 
-1. 建議直接使用[官方主程式下載](https://maplestory.beanfun.com/download)，解壓／安裝到好找的資料夾（例如 `~/Documents/gamania Games/MapleStory`）。
-2. 若改用橘子遊戲管理器安裝：登入 Beanfun／選擇**新楓之谷**，把遊戲目錄設到文件底下（詳見上方可收合的步驟 2）。
-3. 確認存在：
+1. **方式 A（App 內下載，建議）** — 在 Beanfun OTP 選「新楓之谷」，按「下載新楓之谷客戶端」，選擇目的地資料夾（建議 `~/Documents/gamania Games/MapleStory`）。App 會先檢查磁碟空間，再透過 [cmsdl](https://github.com/HikariCalyx/cmsdl) 下載並自動設定 `MapleStory.exe` 路徑。整合細節見 [`docs/cmsdl-maplestory-download.md`](cmsdl-maplestory-download.md)。
+2. **方式 B（手動）** — 使用[官方主程式下載](https://maplestory.beanfun.com/download)，解壓／安裝到好找的資料夾（例如 `~/Documents/gamania Games/MapleStory`）。
+3. 若改用橘子遊戲管理器安裝：登入 Beanfun／選擇**新楓之谷**，把遊戲目錄設到文件底下（詳見上方可收合的步驟 2）。
+4. 確認存在：
 
 ```sh
 ls "$HOME/Documents/gamania Games/MapleStory/MapleStory.exe"
@@ -167,7 +168,7 @@ ls "$HOME/Documents/gamania Games/MapleStory/MapleStory.exe"
 
 路徑可依你實際安裝位置調整。重點是你要能在 Finder 或終端機輕易找到 `MapleStory.exe`。
 
-4. 若走 **Cyder 新楓之谷分支**：在 Finder 對 `MapleStory.exe` 設定「打開方式」為該 Cyder。若走 Launcher Wine，則不必改打開方式。
+5. 若走 **Cyder 新楓之谷分支**：在 Finder 對 `MapleStory.exe` 設定「打開方式」為該 Cyder。若走 Launcher Wine，則不必改打開方式。
 
 ---
 
@@ -179,7 +180,7 @@ ls "$HOME/Documents/gamania Games/MapleStory/MapleStory.exe"
 2. 若系統提示「無法驗證開發者」，到「系統設定 → 隱私權與安全性」允許開啟，或對 App 按右鍵 → 打開。（公證過的 Developer ID 建置通常可直接開。）
 3. 開啟 App（預設為**一般模式**）：
 
-   **選擇遊戲** — 點「新楓之谷」，第一次會要求指定 `MapleStory.exe`：
+   **選擇遊戲** — 點「新楓之谷」，第一次會要求指定 `MapleStory.exe`（若尚未安裝，可先按「下載新楓之谷客戶端」）：
 
    <img src="screenshots/citrusgate-1-home.png" alt="選擇遊戲" width="480">
 

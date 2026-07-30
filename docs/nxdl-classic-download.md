@@ -62,15 +62,15 @@ Beanfun OTP **不**內嵌 nxdl 原始碼；執行時會下載並快取固定版�
 
 App 只解析 `total_size`（位元組）；解析失敗則不開始下載。
 
-| 條件 | 行為 |
-| --- | --- |
-| 可用空間 ≥ `total_size × 1.05` | 直接下載；**不**顯示警告 |
-| `total_size + 1 GiB` ≤ 可用空間 < `total_size × 1.05` | 警告對話框，可選 **「仍要下載」** 或取消 |
-| 可用空間 < `total_size + 1 GiB` | **阻擋**下載；僅顯示錯誤，無法繼續 |
+判定順序（`DiskSpaceGate.evaluate`；硬下限 `minimum = total_size + 1 GiB` 優先）：
+
+1. **硬下限**：可用空間 < `total_size + 1 GiB` → **阻擋**下載；僅顯示錯誤，無法繼續
+2. **否則**，若可用空間 < `total_size × 1.05` → 警告對話框，可選 **「仍要下載」** 或取消
+3. **否則** → 直接下載；**不**顯示警告
 
 其中 `1 GiB = 1024³` 位元組。實作見 `Sources/GameClientDiskGate.swift` 的 `DiskSpaceGate.evaluate`。
 
-當 `total_size < 20 GiB` 時，`× 1.05` 小於 `+ 1 GiB`，中間警告帶為空；僅剩「直接下載」與「硬阻擋」兩種結果。
+當 `total_size < 20 GiB` 時，`total_size × 1.05` < `total_size + 1 GiB`，警告帶不存在；僅在可用空間 ≥ `total_size + 1 GiB` 時才能下載（直接下載，無警告）。
 
 新楓之谷 cmsdl 的 `--check --json` 與相同規則見 [`cmsdl-maplestory-download.md`](cmsdl-maplestory-download.md#磁碟空間檢查下載前)。
 

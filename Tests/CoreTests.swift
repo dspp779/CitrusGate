@@ -478,6 +478,33 @@ enum CoreTests {
         _ = split.ingest(String(frame[midpoint...]))
         try expect(split.state.overall?.totalText == "2.76 GiB", "split chunk overall total")
         try expect(split.state.currentFileName == "spritesheet.bundle", "split chunk current file")
+
+        // Parallel workers render one bar each per frame; all of them belong to
+        // the aggregate bar that opens the frame.
+        func renderFrame(files: [String]) -> String {
+            var text = "⠙ [00:00:14] [====>-----] 950.77 MiB/2.76 GiB (65.06 MiB/s, ETA 29s)\r\n"
+            for name in files {
+                text += "  [==>-------] 84.00 MiB/586.71 MiB ( 6.88 MiB/s) Data\\\(name)\r\n"
+            }
+            return text
+        }
+
+        let parallel = NxdlOutputStreamParser()
+        _ = parallel.ingest(renderFrame(files: ["a.bundle", "b.bundle", "c.bundle"]))
+        try expect(
+            parallel.state.currentFileNamesText == "a.bundle, b.bundle, c.bundle",
+            "parallel files joined"
+        )
+
+        // A frame with fewer files only replaces the list once the frame ends,
+        // which is signalled by the next aggregate line.
+        _ = parallel.ingest(renderFrame(files: ["d.bundle"]))
+        try expect(
+            parallel.state.currentFileNamesText == "a.bundle, b.bundle, c.bundle",
+            "shorter frame waits for frame end"
+        )
+        _ = parallel.ingest(renderFrame(files: ["d.bundle"]))
+        try expect(parallel.state.currentFileNamesText == "d.bundle", "shorter frame committed")
     }
 
     private static func testOpenLauncherArguments() throws {

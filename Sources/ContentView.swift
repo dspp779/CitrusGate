@@ -159,7 +159,11 @@ struct ContentView: View {
                 Text(game.name)
                     .font(.title2.bold())
             }
-            if model.isBusy {
+            if model.isDownloadingGameClient {
+                ProgressView(model.classicDownloadStatus.isEmpty
+                             ? "正在準備下載…"
+                             : model.classicDownloadStatus)
+            } else if model.isBusy {
                 ProgressView("正在產生登入 QR Code…")
             } else {
                 Button {
@@ -297,7 +301,15 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
-                if model.mode == .standard, model.isBusy {
+                if model.isDownloadingGameClient {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text(model.classicDownloadStatus.isEmpty
+                             ? "正在準備下載…"
+                             : model.classicDownloadStatus)
+                    }
+                    .foregroundStyle(.secondary)
+                } else if model.mode == .standard, model.isBusy {
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.small)
                         Text("正在產生登入 QR Code…")

@@ -11,7 +11,7 @@ final class ClassicDownloadProgressWindowController: NSWindowController {
     init(title: String = "下載新楓之谷：經典版", onCancel: @escaping () -> Void) {
         self.onCancel = onCancel
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 440, height: 220),
+            contentRect: NSRect(x: 0, y: 0, width: 440, height: 240),
             styleMask: [.titled, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -55,8 +55,8 @@ final class ClassicDownloadProgressWindowController: NSWindowController {
             statusLabel.stringValue = message
             currentFileLabel.stringValue = ""
         case let .progress(state):
-            if let fileName = state.currentFileName {
-                currentFileLabel.stringValue = "正在下載 \(fileName)"
+            if let fileNames = state.currentFileNamesText {
+                currentFileLabel.stringValue = "正在下載 \(fileNames)"
             } else if !state.statusMessage.isEmpty {
                 statusLabel.stringValue = state.statusMessage
                 currentFileLabel.stringValue = ""
@@ -100,7 +100,7 @@ final class ClassicDownloadProgressWindowController: NSWindowController {
         currentFileLabel.alignment = .left
         currentFileLabel.font = NSFont.systemFont(ofSize: 11)
         currentFileLabel.textColor = NSColor.secondaryLabelColor
-        currentFileLabel.maximumNumberOfLines = 2
+        currentFileLabel.maximumNumberOfLines = 3
         currentFileLabel.lineBreakMode = .byTruncatingMiddle
 
         let cancelButton = NSButton(title: "取消下載", target: self, action: #selector(handleCancel))

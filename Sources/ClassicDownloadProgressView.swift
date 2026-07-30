@@ -40,11 +40,11 @@ struct ClassicDownloadProgressView: View {
                 }
             }
 
-            if let fileName = model.classicDownloadProgress.currentFileName {
-                Text("正在下載 \(fileName)")
+            if let fileNames = model.classicDownloadProgress.currentFileNamesText {
+                Text("正在下載 \(fileNames)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(3)
                     .truncationMode(.middle)
             } else if !model.classicDownloadProgress.statusMessage.isEmpty {
                 Text(model.classicDownloadProgress.statusMessage)

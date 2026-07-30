@@ -78,8 +78,16 @@ struct NxdlOSC94Progress: Equatable {
 struct NxdlDownloadProgressState: Equatable {
     var statusMessage: String = ""
     var overall: NxdlProgressBarInfo?
-    /// Latest file name from TUI per-file lines (display basename).
-    var currentFileName: String?
+    /// File names of the TUI per-file bars in the latest render frame
+    /// (display basenames). The downloader fetches several files in parallel,
+    /// so this usually holds more than one entry.
+    var currentFileNames: [String] = []
+
+    var currentFileName: String? { currentFileNames.first }
+
+    var currentFileNamesText: String? {
+        currentFileNames.isEmpty ? nil : currentFileNames.joined(separator: ", ")
+    }
 }
 
 enum NxdlDownloadUpdate: Equatable {
@@ -470,12 +478,27 @@ final class NxdlOutputStreamParser {
 final class NxdlProgressTracker {
     private(set) var state = NxdlDownloadProgressState()
 
+    /// Per-file bars seen since the last aggregate bar. indicatif renders the
+    /// aggregate bar first in every frame, so the aggregate line marks a frame
+    /// boundary and the file names collected after it belong to one frame.
+    private var frameFileNames: [String] = []
+
     func setOverall(_ overall: NxdlProgressBarInfo) {
         state.overall = overall
+        if !frameFileNames.isEmpty {
+            state.currentFileNames = frameFileNames
+            frameFileNames = []
+        }
     }
 
     func upsert(_ file: NxdlFileProgressInfo) {
-        state.currentFileName = file.displayName
+        guard !frameFileNames.contains(file.displayName) else { return }
+        frameFileNames.append(file.displayName)
+        // Publish while the frame is still growing; a shorter list waits for the
+        // frame to end so the UI does not flicker down to one name and back.
+        if frameFileNames.count >= state.currentFileNames.count {
+            state.currentFileNames = frameFileNames
+        }
     }
 
     func setStatusMessage(_ message: String) {
@@ -723,7 +746,7 @@ final class NxdlDownloader {
                         var restoring = lastProgress
                         progressLock.unlock()
                         restoring.statusMessage = "正在還原檔案路徑…"
-                        restoring.currentFileName = nil
+                        restoring.currentFileNames = []
                         track(.progress(restoring))
                         do {
                             let restored = try self.normalizeWindowsPathFilenames(in: destination)
@@ -733,7 +756,7 @@ final class NxdlDownloader {
                                 var done = lastProgress
                                 progressLock.unlock()
                                 done.statusMessage = "已還原 \(restored) 個檔案路徑"
-                                done.currentFileName = nil
+                                done.currentFileNames = []
                                 track(.progress(done))
                             }
                             completion(.success(()))

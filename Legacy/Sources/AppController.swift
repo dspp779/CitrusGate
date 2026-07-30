@@ -520,7 +520,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             let alert = NSAlert()
             alert.messageText = "磁碟空間不足"
             alert.informativeText =
-                "下載約需 \(needed)，目的地磁碟剩餘 \(free)。\n至少需要 \(minimum)（總量 + 1 GB）才能下載。"
+                "下載約需 \(needed)，目的地磁碟剩餘 \(free)。\n至少需要 \(minimum) 才能下載。"
             alert.alertStyle = .critical
             alert.addButton(withTitle: "確定")
             alert.runModal()

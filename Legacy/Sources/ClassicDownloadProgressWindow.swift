@@ -8,7 +8,7 @@ final class ClassicDownloadProgressWindowController: NSWindowController {
     private let metaLabel = NSTextField(labelWithString: "")
     private let currentFileLabel = NSTextField(wrappingLabelWithString: "")
 
-    init(onCancel: @escaping () -> Void) {
+    init(title: String = "下載新楓之谷：經典版", onCancel: @escaping () -> Void) {
         self.onCancel = onCancel
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 440, height: 220),
@@ -16,7 +16,7 @@ final class ClassicDownloadProgressWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        panel.title = "下載新楓之谷：經典版"
+        panel.title = title
         panel.isFloatingPanel = false
         panel.hidesOnDeactivate = false
         super.init(window: panel)

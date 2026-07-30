@@ -34,8 +34,8 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private var loginCompletionInFlight = false
     private var quitAfterSuccessfulClassicLaunch = false
     private var pendingClassicPassargTokens: [String]?
-    private var isDownloadingClassicClient = false {
-        didSet { updateClassicDownloadUI() }
+    private var isDownloadingGameClient = false {
+        didSet { updateGameClientDownloadUI() }
     }
     private var classicDownloadStatus = ""
     private var classicDownloadProgressWindow: ClassicDownloadProgressWindowController?
@@ -65,6 +65,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private let openClassicWebButton = NSButton(title: "開啟官方登入網頁", target: nil, action: nil)
     private let claimNexonPlugButton = NSButton(title: "將 NexonPlug 設為由 Beanfun OTP 處理", target: nil, action: nil)
     private let downloadClassicButton = NSButton(title: "下載經典版客戶端", target: nil, action: nil)
+    private let downloadMapleStoryButton = NSButton(title: "下載新楓之谷客戶端", target: nil, action: nil)
     private let classicNoticeLabel = NSTextField(wrappingLabelWithString: "網頁登入後會透過 NexonPlug:// 傳送參數啟動經典版。")
     private var classicContainer: NSStackView!
 
@@ -141,7 +142,11 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         chooseExeButton.target = self
         chooseExeButton.action = #selector(handleChooseExecutable)
 
-        exeContainer = NSStackView(views: [exePathLabel, chooseExeButton])
+        downloadMapleStoryButton.bezelStyle = .rounded
+        downloadMapleStoryButton.target = self
+        downloadMapleStoryButton.action = #selector(handleDownloadMapleStory)
+
+        exeContainer = NSStackView(views: [exePathLabel, chooseExeButton, downloadMapleStoryButton])
         exeContainer.orientation = .vertical
         exeContainer.alignment = .centerX
         exeContainer.spacing = 6
@@ -274,6 +279,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         exeContainer.isHidden = !(screen == .qr || screen == .accounts || screen == .otp || screen == .classic)
         // Classic screen uses primaryButton for picking the executable; hide the duplicate in exeContainer.
         chooseExeButton.isHidden = screen == .classic
+        downloadMapleStoryButton.isHidden = selectedGame?.id != GameDefinition.mapleStory.id || screen == .classic
 
         if screen == .games || screen == .accounts {
             tableView.reloadData()
@@ -338,7 +344,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             backButton.isHidden = false
         case .classic:
             primaryButton.title = "選擇主程式…"
-            primaryButton.isEnabled = !isDownloadingClassicClient
+            primaryButton.isEnabled = !isDownloadingGameClient
             secondaryButton.isHidden = true
             wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
@@ -346,9 +352,10 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         }
     }
 
-    private func updateClassicDownloadUI() {
-        let downloading = isDownloadingClassicClient
+    private func updateGameClientDownloadUI() {
+        let downloading = isDownloadingGameClient
         downloadClassicButton.isEnabled = !downloading
+        downloadMapleStoryButton.isEnabled = !downloading
         openClassicWebButton.isEnabled = !downloading
         claimNexonPlugButton.isEnabled = !downloading
     }
@@ -450,7 +457,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     @objc private func handleDownloadClassic() {
         guard selectedGame?.id == GameDefinition.mapleStoryClassic.id else { return }
-        guard !isDownloadingClassicClient else { return }
+        guard !isDownloadingGameClient else { return }
 
         let panel = NSOpenPanel()
         panel.title = "選擇下載資料夾"
@@ -463,19 +470,147 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
-        isDownloadingClassicClient = true
-        classicDownloadStatus = "準備下載…"
-        statusLabel.stringValue = "正在下載新楓之谷：經典版客戶端…"
+        beginGameClientDownload(
+            config: .nxdlClassic,
+            destination: destination,
+            progressTitle: "下載新楓之谷：經典版",
+            statusWhileDownloading: "正在下載新楓之谷：經典版客戶端…",
+            missingExecutableHint: "下載完成，請手動選擇 Maplestory_Classic.exe",
+            logLabel: "經典版"
+        )
+    }
+
+    @objc private func handleDownloadMapleStory() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else { return }
+        guard !isDownloadingGameClient else { return }
+
+        let panel = NSOpenPanel()
+        panel.title = "選擇下載資料夾"
+        panel.message = "新楓之谷客戶端將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
+        panel.prompt = "下載到此處"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+
+        beginGameClientDownload(
+            config: .cmsdlMapleStory,
+            destination: destination,
+            progressTitle: "下載新楓之谷",
+            statusWhileDownloading: "正在下載新楓之谷客戶端…",
+            missingExecutableHint: "下載完成，請手動選擇 MapleStory.exe",
+            logLabel: "新楓之谷"
+        )
+    }
+
+    private func presentDiskGate(evaluation: DiskSpaceEvaluation) -> Bool {
+        let needed = ByteCountFormat.string(bytes: evaluation.totalBytes)
+        let free = ByteCountFormat.string(bytes: evaluation.freeBytes)
+        let minimum = ByteCountFormat.string(bytes: evaluation.minimumBytes)
+        switch evaluation.verdict {
+        case .ok:
+            return true
+        case .blocked:
+            let alert = NSAlert()
+            alert.messageText = "磁碟空間不足"
+            alert.informativeText =
+                "下載約需 \(needed)，目的地磁碟剩餘 \(free)。\n至少需要 \(minimum)（總量 + 1 GB）才能下載。"
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "確定")
+            alert.runModal()
+            return false
+        case .warn:
+            let alert = NSAlert()
+            alert.messageText = "磁碟空間偏低"
+            alert.informativeText =
+                "下載約需 \(needed)，目的地磁碟剩餘 \(free)。\n建議至少保留約 \(ByteCountFormat.string(bytes: evaluation.comfortableBytes))（總量的 105%）。仍要繼續嗎？"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "仍要下載")
+            alert.addButton(withTitle: "取消")
+            return alert.runModal() == .alertFirstButtonReturn
+        }
+    }
+
+    private func beginGameClientDownload(
+        config: GameClientToolConfig,
+        destination: URL,
+        progressTitle: String,
+        statusWhileDownloading: String,
+        missingExecutableHint: String,
+        logLabel: String
+    ) {
+        isDownloadingGameClient = true
+        classicDownloadStatus = "正在檢查下載大小…"
+        statusLabel.stringValue = "正在檢查下載大小…"
         updateButtons()
 
-        let progressWindow = ClassicDownloadProgressWindowController { [weak self] in
-            self?.handleCancelClassicDownload()
+        nxdlDownloader.probeTotalSize(config: config, onUpdate: { [weak self] update in
+            DispatchQueue.main.async {
+                if case let .message(message) = update {
+                    self?.statusLabel.stringValue = message
+                    self?.classicDownloadStatus = message
+                }
+            }
+        }, completion: { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch result {
+                case let .failure(error):
+                    if let nxdlError = error as? NxdlDownloaderError, case .cancelled = nxdlError {
+                        self.statusLabel.stringValue = "下載已取消"
+                    } else {
+                        self.showError(error)
+                        self.statusLabel.stringValue = "下載失敗"
+                    }
+                    self.finishGameClientDownload()
+                case let .success(total):
+                    do {
+                        let free = try VolumeFreeSpace.freeBytes(forDirectory: destination)
+                        let evaluation = DiskSpaceGate.evaluate(totalBytes: total, freeBytes: free)
+                        guard self.presentDiskGate(evaluation: evaluation) else {
+                            self.statusLabel.stringValue = "已取消下載"
+                            self.finishGameClientDownload()
+                            return
+                        }
+                        self.startGameClientDownload(
+                            config: config,
+                            to: destination,
+                            progressTitle: progressTitle,
+                            statusWhileDownloading: statusWhileDownloading,
+                            missingExecutableHint: missingExecutableHint,
+                            logLabel: logLabel
+                        )
+                    } catch {
+                        self.showError(error)
+                        self.statusLabel.stringValue = "下載失敗"
+                        self.finishGameClientDownload()
+                    }
+                }
+            }
+        })
+    }
+
+    private func startGameClientDownload(
+        config: GameClientToolConfig,
+        to destination: URL,
+        progressTitle: String,
+        statusWhileDownloading: String,
+        missingExecutableHint: String,
+        logLabel: String
+    ) {
+        classicDownloadStatus = "準備下載…"
+        statusLabel.stringValue = statusWhileDownloading
+
+        let progressWindow = ClassicDownloadProgressWindowController(title: progressTitle) { [weak self] in
+            self?.handleCancelGameClientDownload()
         }
         classicDownloadProgressWindow = progressWindow
         progressWindow.apply(update: .message("準備下載…"))
         progressWindow.show(relativeTo: view.window)
 
-        nxdlDownloader.downloadClassicClient(to: destination, onUpdate: { [weak self] update in
+        nxdlDownloader.downloadClient(config: config, to: destination, onUpdate: { [weak self] update in
             DispatchQueue.main.async {
                 self?.classicDownloadProgressWindow?.apply(update: update)
                 if case let .message(message) = update {
@@ -489,14 +624,14 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                 guard let self else { return }
                 switch result {
                 case .success:
-                    if let exePath = self.nxdlDownloader.findClassicExecutable(in: destination),
+                    if let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination),
                        let game = self.selectedGame {
                         self.saveExecutablePath(exePath, for: game)
                         self.statusLabel.stringValue = "下載完成，已設定主程式路徑"
-                        NSLog("經典版下載完成：%@，主程式=%@", destination.path, exePath)
+                        NSLog("%@下載完成：%@，主程式=%@", logLabel, destination.path, exePath)
                     } else {
-                        self.statusLabel.stringValue = "下載完成，請手動選擇 Maplestory_Classic.exe"
-                        NSLog("經典版下載完成：%@（未自動找到主程式）", destination.path)
+                        self.statusLabel.stringValue = missingExecutableHint
+                        NSLog("%@下載完成：%@（未自動找到主程式）", logLabel, destination.path)
                     }
                 case let .failure(error as NxdlDownloaderError):
                     if case .cancelled = error {
@@ -509,21 +644,21 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                     self.showError(error)
                     self.statusLabel.stringValue = "下載失敗"
                 }
-                self.finishClassicDownload()
+                self.finishGameClientDownload()
             }
         })
     }
 
-    @objc private func handleCancelClassicDownload() {
+    @objc private func handleCancelGameClientDownload() {
         nxdlDownloader.cancel()
     }
 
-    private func finishClassicDownload() {
-        isDownloadingClassicClient = false
+    private func finishGameClientDownload() {
+        isDownloadingGameClient = false
         classicDownloadStatus = ""
         classicDownloadProgressWindow?.closeProgressWindow()
         classicDownloadProgressWindow = nil
-        updateClassicDownloadUI()
+        updateGameClientDownloadUI()
         updateButtons()
     }
 

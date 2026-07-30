@@ -28,7 +28,9 @@ enum CoreTests {
         try testNormalizeWindowsPathFilenamesOnDisk()
         try testNxdlBinaryIntegrity()
         try testNxdlFailureMessage()
-        print("CoreTests: 25 tests passed")
+        try testDiskSpaceGate()
+        try testClientCheckJSONParser()
+        print("CoreTests: 27 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -628,6 +630,57 @@ enum CoreTests {
         try expect(NxdlFailureMessage.isErrorLike("Error: boom"), "Error: prefix")
         try expect(NxdlFailureMessage.isErrorLike("nxdl: nope"), "nxdl: prefix")
         try expect(!NxdlFailureMessage.isErrorLike("950.77 MiB/2.76 GiB"), "progress is not error")
+    }
+
+    private static func testDiskSpaceGate() throws {
+        let gib: UInt64 = 1_024 * 1_024 * 1_024
+
+        try expect(
+            DiskSpaceGate.evaluate(totalBytes: 10 * gib, freeBytes: 12 * gib).verdict == .ok,
+            "small plenty → ok"
+        )
+        try expect(
+            DiskSpaceGate.evaluate(totalBytes: 10 * gib, freeBytes: 11 * gib).verdict == .ok,
+            "small at +1GiB still ≥ 1.05 → ok"
+        )
+        try expect(
+            DiskSpaceGate.evaluate(totalBytes: 10 * gib, freeBytes: UInt64(10.7 * Double(gib))).verdict == .blocked,
+            "small between 1.05 and +1GiB → blocked"
+        )
+
+        let largeTotal: UInt64 = 50 * gib
+        try expect(
+            DiskSpaceGate.evaluate(totalBytes: largeTotal, freeBytes: 53 * gib).verdict == .ok,
+            "large comfortable → ok"
+        )
+        let warn = DiskSpaceGate.evaluate(totalBytes: largeTotal, freeBytes: 52 * gib)
+        try expect(warn.verdict == .warn, "large mid band → warn")
+        try expect(warn.minimumBytes == largeTotal + gib, "minimum = total + 1GiB")
+        try expect(
+            DiskSpaceGate.evaluate(totalBytes: largeTotal, freeBytes: 50 * gib + gib / 2).verdict == .blocked,
+            "large below minimum → blocked"
+        )
+    }
+
+    private static func testClientCheckJSONParser() throws {
+        let cmsdl = #"{"region":"tms","build":0,"version":"V280","files":10,"total_size":13245678901}"#
+        let cmsdlTotal = try ClientCheckJSONParser.totalSizeBytes(fromJSONText: cmsdl)
+        try expect(cmsdlTotal == 13_245_678_901, "cmsdl total")
+
+        let nxdl = #"{"appid":"2982@2141","game_name":"x","files_to_download":168,"total_size":2962637533}"#
+        let nxdlTotal = try ClientCheckJSONParser.totalSizeBytes(fromJSONText: nxdl)
+        try expect(nxdlTotal == 2_962_637_533, "nxdl total")
+
+        do {
+            _ = try ClientCheckJSONParser.totalSizeBytes(fromJSONText: #"{"files":1}"#)
+            throw TestFailure(message: "missing total_size should throw")
+        } catch is ClientCheckError {
+            // ok
+        } catch let error as TestFailure {
+            throw error
+        } catch {
+            throw TestFailure(message: "unexpected error \(error)")
+        }
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

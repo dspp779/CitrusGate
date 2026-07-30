@@ -20,6 +20,7 @@ swiftc -swift-version 5 -sdk "$sdk" -module-cache-path "$module_cache" \
     "$project_dir/Sources/MapleStoryWineLauncher.swift" \
     "$project_dir/Sources/BeanfunClient.swift" \
     "$project_dir/Sources/NxdlDownloader.swift" \
+    "$project_dir/Sources/GameClientDiskGate.swift" \
     "$project_dir/Sources/AppModel.swift" \
     "$project_dir/Tests/CoreTests.swift" \
     -o "$build_dir/CoreTests"

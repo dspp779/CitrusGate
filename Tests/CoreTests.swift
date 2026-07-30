@@ -27,10 +27,11 @@ enum CoreTests {
         try testWindowsPathFilenameNormalizer()
         try testNormalizeWindowsPathFilenamesOnDisk()
         try testNxdlBinaryIntegrity()
+        try testCmsdlBinaryPin()
         try testNxdlFailureMessage()
         try testDiskSpaceGate()
         try testClientCheckJSONParser()
-        print("CoreTests: 27 tests passed")
+        print("CoreTests: 28 tests passed")
     }
 
     private static func testKnownDESVector() throws {
@@ -608,6 +609,26 @@ enum CoreTests {
                 throw TestFailure(message: "expected checksum mismatch")
             }
         }
+    }
+
+    private static func testCmsdlBinaryPin() throws {
+        try expect(
+            GameClientToolConfig.cmsdlMapleStory.releaseTag == "v0.2.5",
+            "cmsdl tag"
+        )
+        try expect(
+            GameClientToolConfig.cmsdlMapleStory.sha256Hex
+                == "706efcf17608a807c884e1eb8e0c8b97084f67dfbec29f7664e9aba77d0a0b78",
+            "cmsdl sha"
+        )
+        try expect(
+            GameClientToolConfig.cmsdlMapleStory.gameAlias == "tms",
+            "cmsdl alias"
+        )
+        try expect(
+            GameClientToolConfig.cmsdlMapleStory.primaryExecutableName == "MapleStory.exe",
+            "cmsdl exe"
+        )
     }
 
     private static func testNxdlFailureMessage() throws {

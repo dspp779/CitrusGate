@@ -2,6 +2,44 @@ import CommonCrypto
 import Darwin
 import Foundation
 
+struct GameClientToolConfig: Equatable {
+    let releaseTag: String
+    let binaryRemoteURL: URL
+    let sha256Hex: String
+    let cacheFolderName: String
+    let binaryFileName: String
+    let gameAlias: String
+    let primaryExecutableName: String
+
+    var checkArguments: [String] { [gameAlias, "--check", "--json"] }
+
+    func downloadArguments(destinationPath: String) -> [String] {
+        [gameAlias, "--download", destinationPath]
+    }
+
+    static let nxdlClassic = GameClientToolConfig(
+        releaseTag: NxdlDownloader.releaseTag,
+        binaryRemoteURL: NxdlDownloader.binaryRemoteURL,
+        sha256Hex: NxdlBinaryIntegrity.expectedSHA256Hex,
+        cacheFolderName: "nxdl",
+        binaryFileName: "nxdl_darwin",
+        gameAlias: NxdlDownloader.gameAlias,
+        primaryExecutableName: NxdlDownloader.classicExecutableName
+    )
+
+    static let cmsdlMapleStory = GameClientToolConfig(
+        releaseTag: "v0.2.5",
+        binaryRemoteURL: URL(
+            string: "https://github.com/HikariCalyx/cmsdl/releases/download/v0.2.5/cmsdl_darwin"
+        )!,
+        sha256Hex: "706efcf17608a807c884e1eb8e0c8b97084f67dfbec29f7664e9aba77d0a0b78",
+        cacheFolderName: "cmsdl",
+        binaryFileName: "cmsdl_darwin",
+        gameAlias: "tms",
+        primaryExecutableName: "MapleStory.exe"
+    )
+}
+
 struct NxdlProgressBarInfo: Equatable {
     let downloadedText: String
     let totalText: String
@@ -512,7 +550,7 @@ enum NxdlBinaryIntegrity {
         return hexString(digest)
     }
 
-    static func verifyFile(at path: String) throws {
+    static func verifyFile(at path: String, expectedSHA256Hex: String = expectedSHA256Hex) throws {
         let actual = try sha256Hex(ofFileAt: path)
         guard actual == expectedSHA256Hex else {
             throw NxdlDownloaderError.binaryChecksumMismatch(

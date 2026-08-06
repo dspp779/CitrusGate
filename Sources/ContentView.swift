@@ -32,11 +32,12 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(width: windowSize.width, height: windowSize.height)
+        .frame(width: model.mode == .standard ? 400 : 720)
         .background(
             FixedWindowConfigurator(
-                contentSize: windowSize,
-                extendContentUnderTitlebar: true
+                mode: model.mode,
+                screen: model.screen,
+                extendContentUnderTitlebar: model.mode == .standard
             )
         )
         .onAppear { model.handleInitialAppearance() }
@@ -820,7 +821,8 @@ private struct GameArtwork: View {
 }
 
 private struct FixedWindowConfigurator: NSViewRepresentable {
-    let contentSize: CGSize
+    let mode: AppMode
+    let screen: AppScreen
     var extendContentUnderTitlebar: Bool = false
 
     func makeNSView(context: Context) -> NSView {
@@ -840,9 +842,37 @@ private struct FixedWindowConfigurator: NSViewRepresentable {
                 window.styleMask.insert(.fullSizeContentView)
                 window.titlebarAppearsTransparent = true
                 window.titleVisibility = .hidden
+            } else {
+                window.styleMask.remove(.fullSizeContentView)
+                window.titlebarAppearsTransparent = false
+                window.titleVisibility = .visible
             }
             window.backgroundColor = NSColor.windowBackgroundColor
-            window.contentMinSize = contentSize
+
+            let targetWidth: CGFloat = mode == .standard ? 400 : 720
+            let targetHeight: CGFloat
+            if mode == .standard {
+                if let contentView = window.contentView {
+                    contentView.layoutSubtreeIfNeeded()
+                    let fitH = contentView.fittingSize.height
+                    targetHeight = max(fitH, 260)
+                } else {
+                    targetHeight = 440
+                }
+            } else {
+                targetHeight = 640
+            }
+
+            let currentContentRect = window.contentRect(forFrameRect: window.frame)
+            if abs(currentContentRect.height - targetHeight) > 1 || abs(currentContentRect.width - targetWidth) > 1 {
+                let newFrame = window.frameRect(forContentRect: NSRect(
+                    x: window.frame.origin.x,
+                    y: window.frame.origin.y + (currentContentRect.height - targetHeight),
+                    width: targetWidth,
+                    height: targetHeight
+                ))
+                window.setFrame(newFrame, display: true, animate: true)
+            }
         }
     }
 }

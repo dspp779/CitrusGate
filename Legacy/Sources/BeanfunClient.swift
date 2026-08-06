@@ -365,7 +365,7 @@ final class BeanfunClient {
         let gen = generation
         log("[帳號] 取得\(game.name)帳號清單（\(game.serviceKey)）")
         guard let webToken = cookieValue(named: "bfWebToken") else {
-            finish(completion, .failure(BeanfunError.parse("Cookie 中缺少 bfWebToken，無法授權 game_zone")))
+            finish(completion, .failure(BeanfunError.expired(BeanfunError.defaultExpiredMessage)))
             return
         }
         guard let homeURL = try? makeURL("https://\(Self.host)/") else {
@@ -508,7 +508,7 @@ final class BeanfunClient {
         completion: @escaping (Result<[GameAccount], Error>) -> Void
     ) {
         guard !accounts.isEmpty else {
-            finish(completion, .failure(BeanfunError.parse("帳號清單為空；登入可能已失效或尚未建立\(game.name)帳號")))
+            finish(completion, .failure(BeanfunError.expired("帳號清單為空或登入已失效，請重新取得 QR Code 並掃描登入")))
             return
         }
         for account in accounts {
@@ -560,7 +560,7 @@ final class BeanfunClient {
             case let .success(step2Response):
                 guard let page = try? self.text(step2Response.data),
                       let start = try? self.parseStartData(page) else {
-                    self.finish(completion, .failure(BeanfunError.parse("step2 回應無法解析")))
+                    self.finish(completion, .failure(BeanfunError.expired(BeanfunError.defaultExpiredMessage)))
                     return
                 }
                 self.log("  LongPolling key=\(start.longPollingKey)")
@@ -663,6 +663,11 @@ final class BeanfunClient {
                     of: #"['"]?intResult['"]?\s*:\s*1"#,
                     options: .regularExpression
                 ) != nil else {
+                    let lower = recordText.lowercased()
+                    if lower.contains("登入") || lower.contains("逾時") || lower.contains("session") || lower.contains("expired") {
+                        self.finish(completion, .failure(BeanfunError.expired(BeanfunError.defaultExpiredMessage)))
+                        return
+                    }
                     self.finish(completion, .failure(BeanfunError.rejected("record_service_start：\(recordText.prefix(300))")))
                     return
                 }
@@ -728,7 +733,7 @@ final class BeanfunClient {
     ) {
         log("[OTP 5/6] 取得 WebStart OTP envelope")
         guard let webToken = cookieValue(named: "bfWebToken") else {
-            finish(completion, .failure(BeanfunError.parse("Cookie 中缺少 bfWebToken")))
+            finish(completion, .failure(BeanfunError.expired(BeanfunError.defaultExpiredMessage)))
             return
         }
         guard let otpURL = try? url(
@@ -776,7 +781,13 @@ final class BeanfunClient {
             return
         }
         guard parts[0] == "1" else {
-            finish(completion, .failure(BeanfunError.rejected(String(parts[1].prefix(300)))))
+            let reason = String(parts[1].prefix(300))
+            let lower = reason.lowercased()
+            if lower.contains("登入") || lower.contains("逾時") || lower.contains("session") || lower.contains("expired") {
+                finish(completion, .failure(BeanfunError.expired(BeanfunError.defaultExpiredMessage)))
+                return
+            }
+            finish(completion, .failure(BeanfunError.rejected(reason)))
             return
         }
         let payload = String(parts[1])
@@ -810,47 +821,56 @@ final class BeanfunClient {
     }
 
     private func parseStartData(_ page: String) throws -> GameStartData {
-        let key = try capture(
-            #"GetResultByLongPolling(?:&amp;|&)key=([0-9a-fA-F-]{36})"#,
-            in: page,
-            label: "LongPolling key"
-        )
-        let accountID = try capture(#"ServiceAccountID:\s*"([^"]+)""#, in: page, label: "account ID")
-        let sn = try capture(#"ServiceAccountSN:\s*"([^"]+)""#, in: page, label: "account SN")
-        let displayName = Self.decodeHTML(try capture(
-            #"ServiceAccountDisplayName:\s*"([^"]+)""#,
-            in: page,
-            label: "account name"
-        ))
-        let createTime = try capture(
-            #"ServiceAccountCreateTime:\s*"([^"]+)""#,
-            in: page,
-            label: "account create time"
-        )
-        let guardName = try capture(
-            #"MyAccountData\.ServiceAccountCreateTime\s*\+\s*"&([^="]+)=([^"]+)"\s*;"#,
-            in: page,
-            label: "dynamic session guard",
-            group: 1
-        )
-        let encodedGuard = try capture(
-            #"MyAccountData\.ServiceAccountCreateTime\s*\+\s*"&([^="]+)=([^"]+)"\s*;"#,
-            in: page,
-            label: "dynamic session guard value",
-            group: 2
-        )
-        let guardValue = encodedGuard.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
-            ?? encodedGuard
-        return GameStartData(
-            longPollingKey: key,
-            accountID: accountID,
-            sn: sn,
-            displayName: displayName,
-            createTime: createTime,
-            guardName: guardName,
-            guardValue: guardValue
-        )
+        do {
+            let key = try capture(
+                #"GetResultByLongPolling(?:&amp;|&)key=([0-9a-fA-F-]{36})"#,
+                in: page,
+                label: "LongPolling key"
+            )
+            let accountID = try capture(#"ServiceAccountID:\s*"([^"]+)""#, in: page, label: "account ID")
+            let sn = try capture(#"ServiceAccountSN:\s*"([^"]+)""#, in: page, label: "account SN")
+            let displayName = Self.decodeHTML(try capture(
+                #"ServiceAccountDisplayName:\s*"([^"]+)""#,
+                in: page,
+                label: "account name"
+            ))
+            let createTime = try capture(
+                #"ServiceAccountCreateTime:\s*"([^"]+)""#,
+                in: page,
+                label: "account create time"
+            )
+            let guardName = try capture(
+                #"MyAccountData\.ServiceAccountCreateTime\s*\+\s*"&([^="]+)=([^"]+)"\s*;"#,
+                in: page,
+                label: "dynamic session guard",
+                group: 1
+            )
+            let encodedGuard = try capture(
+                #"MyAccountData\.ServiceAccountCreateTime\s*\+\s*"&([^="]+)=([^"]+)"\s*;"#,
+                in: page,
+                label: "dynamic session guard value",
+                group: 2
+            )
+            let guardValue = encodedGuard.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
+                ?? encodedGuard
+            return GameStartData(
+                longPollingKey: key,
+                accountID: accountID,
+                sn: sn,
+                displayName: displayName,
+                createTime: createTime,
+                guardName: guardName,
+                guardValue: guardValue
+            )
+        } catch {
+            let lower = page.lowercased()
+            if lower.contains("login") || lower.contains("登入") || lower.contains("auth") {
+                throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
+            }
+            throw error
+        }
     }
+
 
     // MARK: - HTTP core
 

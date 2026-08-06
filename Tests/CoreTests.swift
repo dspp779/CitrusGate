@@ -31,8 +31,10 @@ enum CoreTests {
         try testNxdlFailureMessage()
         try testDiskSpaceGate()
         try testClientCheckJSONParser()
-        print("CoreTests: 28 tests passed")
+        try testSessionExpiredDetection()
+        print("CoreTests: 29 tests passed")
     }
+
 
     private static func testKnownDESVector() throws {
         let ciphertext = try require(Data(hexString: "897923ff842ec7e7"), "hex decode failed")
@@ -731,7 +733,23 @@ enum CoreTests {
         }
     }
 
+    private static func testSessionExpiredDetection() throws {
+        let expiredError = BeanfunError.expired(BeanfunError.defaultExpiredMessage)
+        try expect(expiredError.isSessionExpired, "expired error should be session expired")
+        try expect(expiredError.localizedDescription == "登入階段已過期，請重新取得 QR Code 並掃描登入", "expired error message")
+
+        let parseError = BeanfunError.parse("找不到 LongPolling key，登入可能已過期")
+        try expect(parseError.isSessionExpired, "parse error with login phrase should be session expired")
+
+        let rejectedError = BeanfunError.rejected("0;登入逾時")
+        try expect(rejectedError.isSessionExpired, "rejected error with 登入逾時 should be session expired")
+
+        let networkError = BeanfunError.network("連線逾時")
+        try expect(!networkError.isSessionExpired, "network timeout is not session expiration")
+    }
+
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+
         if !condition() { throw TestFailure(message: message) }
     }
 

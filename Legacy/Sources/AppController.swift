@@ -980,6 +980,13 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             launcher: launcher
         )
 
+        do {
+            try clearQuarantineIfNeeded(at: path)
+        } catch {
+            showError(error)
+            return
+        }
+
         switch launcher {
         case .defaultApplication:
             statusLabel.stringValue = "正在開啟\(game.name)…"
@@ -1036,6 +1043,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
         statusLabel.stringValue = "正在以 MapleStory Launcher 啟動新楓之谷…"
         do {
+            try clearQuarantineIfNeeded(at: path)
             try runProcess(
                 launchPath: wineURL.path,
                 arguments: args,
@@ -1115,6 +1123,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
         statusLabel.stringValue = "正在開啟新楓之谷：經典版…"
         do {
+            try clearQuarantineIfNeeded(at: path)
             try runProcess(
                 launchPath: "/usr/bin/open",
                 arguments: args,
@@ -1161,6 +1170,58 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     // MARK: - Helpers
 
+    private func clearQuarantineIfNeeded(at path: String) throws {
+        let names = try extendedAttributeNames(at: path)
+        guard names.contains("com.apple.quarantine") else { return }
+
+        do {
+            try removeExtendedAttribute("com.apple.quarantine", at: path)
+        } catch {
+            let detail = (error as NSError).localizedDescription
+            throw BeanfunError.rejected(
+                "無法解除檔案的 macOS quarantine，請檢查檔案權限後再試一次：\(path)\n\(detail)"
+            )
+        }
+    }
+
+    private func extendedAttributeNames(at path: String) throws -> [String] {
+        let length = listxattr(path, nil, 0, 0)
+        guard length >= 0 else {
+            throw posixError(errno, path: path)
+        }
+        guard length > 0 else { return [] }
+
+        var buffer = [CChar](repeating: 0, count: length)
+        let result = listxattr(path, &buffer, buffer.count, 0)
+        guard result >= 0 else {
+            throw posixError(errno, path: path)
+        }
+
+        return Data(bytes: buffer, count: result)
+            .split(separator: 0)
+            .compactMap { String(data: Data($0), encoding: .utf8) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func removeExtendedAttribute(_ name: String, at path: String) throws {
+        if removexattr(path, name, 0) != 0 {
+            throw posixError(errno, path: path)
+        }
+    }
+
+    private func posixError(_ code: Int32, path: String) -> NSError {
+        NSError(
+            domain: NSPOSIXErrorDomain,
+            code: Int(code),
+            userInfo: [
+                NSLocalizedDescriptionKey: String(cString: strerror(code)),
+                NSFilePathErrorKey: path,
+            ]
+        )
+    }
+
+    // MARK: - Helpers
+
     private func isValidExecutablePath(_ path: String) -> Bool {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         return !trimmed.isEmpty && FileManager.default.fileExists(atPath: trimmed)
@@ -1183,12 +1244,52 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     }
 
     private func showError(_ error: Error) {
+        if let beanfunError = error as? BeanfunError, beanfunError.isSessionExpired {
+            handleSessionExpired(message: beanfunError.localizedDescription)
+            return
+        }
         let alert = NSAlert()
         alert.messageText = "Beanfun OTP Legacy"
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
         alert.runModal()
     }
+
+    private func handleSessionExpired(message: String = BeanfunError.defaultExpiredMessage) {
+        client.reset()
+        stopTimers()
+        loginCompletionInFlight = false
+        accounts = []
+        selectedAccount = nil
+        clearTableSelection()
+        otpResult = nil
+        accountField.stringValue = ""
+        otpField.stringValue = ""
+        imageView.image = nil
+        qrStatusLabel.stringValue = ""
+
+        let msg = message.isEmpty ? BeanfunError.defaultExpiredMessage : message
+        statusLabel.stringValue = "登入階段已過期"
+
+        let alert = NSAlert()
+        alert.messageText = "登入階段已過期"
+        alert.informativeText = msg
+        alert.alertStyle = .warning
+        if selectedGame != nil && selectedGame?.usesBeanfunQR == true {
+            alert.addButton(withTitle: "重新產生 QR Code 並登入")
+            alert.addButton(withTitle: "取消")
+            if alert.runModal() == .alertFirstButtonReturn {
+                startLogin()
+            } else {
+                resetToGames()
+            }
+        } else {
+            alert.addButton(withTitle: "確定")
+            alert.runModal()
+            resetToGames()
+        }
+    }
+
 
     // MARK: - NSTableViewDataSource
 

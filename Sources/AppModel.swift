@@ -1097,14 +1097,29 @@ final class AppModel: ObservableObject {
 
     private func present(_ error: Error) {
         isBusy = false
-        statusMessage = "操作失敗"
         if let beanfunError = error as? BeanfunError {
+            if beanfunError.isSessionExpired {
+                handleSessionExpired(message: beanfunError.localizedDescription)
+                return
+            }
+            statusMessage = "操作失敗"
             errorMessage = beanfunError.localizedDescription
         } else {
+            statusMessage = "操作失敗"
             errorMessage = error.localizedDescription
         }
         appendLog("錯誤：\(errorMessage ?? error.localizedDescription)")
     }
+
+    func handleSessionExpired(message: String = BeanfunError.defaultExpiredMessage) {
+        client.reset()
+        resetGameSession()
+        statusMessage = "登入階段已過期"
+        errorMessage = message.isEmpty ? BeanfunError.defaultExpiredMessage : message
+        screen = .welcome
+        appendLog("Session 已過期：\(errorMessage ?? "")")
+    }
+
 
     private func appendLog(_ message: String) {
         let formatter = DateFormatter()

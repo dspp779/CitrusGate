@@ -293,6 +293,8 @@ enum BeanfunError: LocalizedError {
     case expired(String)
     case cancelled
 
+    static let defaultExpiredMessage = "登入階段已過期，請重新取得 QR Code 並掃描登入"
+
     var errorDescription: String? {
         switch self {
         case let .invalidURL(value):
@@ -306,9 +308,27 @@ enum BeanfunError: LocalizedError {
         case let .rejected(message):
             return "Beanfun 拒絕請求：\(message)"
         case let .expired(message):
-            return message
+            return message.isEmpty ? Self.defaultExpiredMessage : message
         case .cancelled:
             return "操作已取消"
         }
     }
+
+    var isSessionExpired: Bool {
+        switch self {
+        case .expired:
+            return true
+        case let .parse(message), let .rejected(message):
+            let lower = message.lowercased()
+            return lower.contains("登入") || lower.contains("逾時") || lower.contains("session")
+                || lower.contains("longpolling key") || lower.contains("expired") || lower.contains("webtoken")
+        case let .http(status, _, body):
+            if status == 401 || status == 403 { return true }
+            let lower = body.lowercased()
+            return lower.contains("login") || lower.contains("登入")
+        default:
+            return false
+        }
+    }
 }
+

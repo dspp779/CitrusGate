@@ -194,7 +194,7 @@ final class BeanfunClient {
     func fetchAccounts(for game: GameDefinition) async throws -> [GameAccount] {
         log("[帳號] 取得\(game.name)帳號清單（\(game.serviceKey)）")
         guard let webToken = cookieValue(named: "bfWebToken") else {
-            throw BeanfunError.parse("Cookie 中缺少 bfWebToken，無法授權 game_zone")
+            throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
         }
         let homeURL = try makeURL("https://\(Self.host)/")
         let authURL: URL
@@ -252,7 +252,7 @@ final class BeanfunClient {
             accounts = parseAccounts(from: try text(response.data))
         }
         guard !accounts.isEmpty else {
-            throw BeanfunError.parse("帳號清單為空；登入可能已失效或尚未建立\(game.name)帳號")
+            throw BeanfunError.expired("帳號清單為空或登入已失效，請重新取得 QR Code 並掃描登入")
         }
         for account in accounts {
             log("  id=\(account.id)，sn=\(account.sn)，name=\(account.displayName)")
@@ -334,6 +334,10 @@ final class BeanfunClient {
             of: #"['"]?intResult['"]?\s*:\s*1"#,
             options: .regularExpression
         ) != nil else {
+            let lower = recordText.lowercased()
+            if lower.contains("登入") || lower.contains("逾時") || lower.contains("session") || lower.contains("expired") {
+                throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
+            }
             throw BeanfunError.rejected("record_service_start：\(recordText.prefix(300))")
         }
         log("  record_service_start：Success")
@@ -361,7 +365,7 @@ final class BeanfunClient {
 
         log("[OTP 5/6] 取得 WebStart OTP envelope")
         guard let webToken = cookieValue(named: "bfWebToken") else {
-            throw BeanfunError.parse("Cookie 中缺少 bfWebToken")
+            throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
         }
         let otpURL = try url(
             "https://\(Self.host)/beanfun_block/generic_handlers/get_webstart_otp.ashx",
@@ -384,7 +388,12 @@ final class BeanfunClient {
             throw BeanfunError.parse("OTP 回應格式不正確：\(envelope.prefix(200))")
         }
         guard parts[0] == "1" else {
-            throw BeanfunError.rejected(String(parts[1].prefix(300)))
+            let reason = String(parts[1].prefix(300))
+            let lower = reason.lowercased()
+            if lower.contains("登入") || lower.contains("逾時") || lower.contains("session") || lower.contains("expired") {
+                throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
+            }
+            throw BeanfunError.rejected(reason)
         }
         let payload = String(parts[1])
         guard payload.count >= 24 else {
@@ -411,47 +420,56 @@ final class BeanfunClient {
     }
 
     private func parseStartData(_ page: String) throws -> GameStartData {
-        let key = try capture(
-            #"GetResultByLongPolling(?:&amp;|&)key=([0-9a-fA-F-]{36})"#,
-            in: page,
-            label: "LongPolling key"
-        )
-        let accountID = try capture(#"ServiceAccountID:\s*"([^"]+)""#, in: page, label: "account ID")
-        let sn = try capture(#"ServiceAccountSN:\s*"([^"]+)""#, in: page, label: "account SN")
-        let displayName = Self.decodeHTML(try capture(
-            #"ServiceAccountDisplayName:\s*"([^"]+)""#,
-            in: page,
-            label: "account name"
-        ))
-        let createTime = try capture(
-            #"ServiceAccountCreateTime:\s*"([^"]+)""#,
-            in: page,
-            label: "account create time"
-        )
-        let guardName = try capture(
-            #"MyAccountData\.ServiceAccountCreateTime\s*\+\s*"&([^="]+)=([^"]+)"\s*;"#,
-            in: page,
-            label: "dynamic session guard",
-            group: 1
-        )
-        let encodedGuard = try capture(
-            #"MyAccountData\.ServiceAccountCreateTime\s*\+\s*"&([^="]+)=([^"]+)"\s*;"#,
-            in: page,
-            label: "dynamic session guard value",
-            group: 2
-        )
-        let guardValue = encodedGuard.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
-            ?? encodedGuard
-        return GameStartData(
-            longPollingKey: key,
-            accountID: accountID,
-            sn: sn,
-            displayName: displayName,
-            createTime: createTime,
-            guardName: guardName,
-            guardValue: guardValue
-        )
+        do {
+            let key = try capture(
+                #"GetResultByLongPolling(?:&amp;|&)key=([0-9a-fA-F-]{36})"#,
+                in: page,
+                label: "LongPolling key"
+            )
+            let accountID = try capture(#"ServiceAccountID:\s*"([^"]+)""#, in: page, label: "account ID")
+            let sn = try capture(#"ServiceAccountSN:\s*"([^"]+)""#, in: page, label: "account SN")
+            let displayName = Self.decodeHTML(try capture(
+                #"ServiceAccountDisplayName:\s*"([^"]+)""#,
+                in: page,
+                label: "account name"
+            ))
+            let createTime = try capture(
+                #"ServiceAccountCreateTime:\s*"([^"]+)""#,
+                in: page,
+                label: "account create time"
+            )
+            let guardName = try capture(
+                #"MyAccountData\.ServiceAccountCreateTime\s*\+\s*"&([^="]+)=([^"]+)"\s*;"#,
+                in: page,
+                label: "dynamic session guard",
+                group: 1
+            )
+            let encodedGuard = try capture(
+                #"MyAccountData\.ServiceAccountCreateTime\s*\+\s*"&([^="]+)=([^"]+)"\s*;"#,
+                in: page,
+                label: "dynamic session guard value",
+                group: 2
+            )
+            let guardValue = encodedGuard.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
+                ?? encodedGuard
+            return GameStartData(
+                longPollingKey: key,
+                accountID: accountID,
+                sn: sn,
+                displayName: displayName,
+                createTime: createTime,
+                guardName: guardName,
+                guardValue: guardValue
+            )
+        } catch {
+            let lower = page.lowercased()
+            if lower.contains("login") || lower.contains("登入") || lower.contains("auth") {
+                throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
+            }
+            throw error
+        }
     }
+
 
     private struct HTTPResult {
         let data: Data

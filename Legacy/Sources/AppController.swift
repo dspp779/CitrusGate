@@ -64,8 +64,8 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     // Classic Mode UI
     private let openClassicWebButton = NSButton(title: "開啟官方登入網頁", target: nil, action: nil)
     private let claimNexonPlugButton = NSButton(title: "將 NexonPlug 設為由 Beanfun OTP 處理", target: nil, action: nil)
-    private let downloadClassicButton = NSButton(title: "下載經典版客戶端", target: nil, action: nil)
-    private let downloadMapleStoryButton = NSButton(title: "下載新楓之谷客戶端", target: nil, action: nil)
+    private let downloadClassicButton = NSButton(title: "下載經典版", target: nil, action: nil)
+    private let downloadMapleStoryButton = NSButton(title: "下載新楓之谷", target: nil, action: nil)
     private let classicNoticeLabel = NSTextField(wrappingLabelWithString: "網頁登入後會透過 NexonPlug:// 傳送參數啟動經典版。")
     private var classicContainer: NSStackView!
 
@@ -463,7 +463,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
         let panel = NSOpenPanel()
         panel.title = "選擇下載資料夾"
-        panel.message = "新楓之谷：經典版客戶端將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
+        panel.message = "新楓之谷：經典版將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
         panel.prompt = "下載到此處"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -477,7 +477,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             config: .nxdlClassic,
             destination: destination,
             progressTitle: "下載新楓之谷：經典版",
-            statusWhileDownloading: "正在下載新楓之谷：經典版客戶端…",
+            statusWhileDownloading: "正在下載新楓之谷：經典版…",
             missingExecutableHint: "下載完成，請手動選擇 Maplestory_Classic.exe",
             logLabel: "經典版"
         )
@@ -489,7 +489,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
         let panel = NSOpenPanel()
         panel.title = "選擇下載資料夾"
-        panel.message = "新楓之谷客戶端將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
+        panel.message = "新楓之谷將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
         panel.prompt = "下載到此處"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -503,7 +503,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             config: .cmsdlMapleStory,
             destination: destination,
             progressTitle: "下載新楓之谷",
-            statusWhileDownloading: "正在下載新楓之谷客戶端…",
+            statusWhileDownloading: "正在下載新楓之谷…",
             missingExecutableHint: "下載完成，請手動選擇 MapleStory.exe",
             logLabel: "新楓之谷"
         )

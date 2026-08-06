@@ -178,7 +178,7 @@ struct ContentView: View {
                 Button {
                     model.downloadMapleStoryClient()
                 } label: {
-                    Label("下載新楓之谷客戶端", systemImage: "arrow.down.circle")
+                    Label("下載新楓之谷", systemImage: "arrow.down.circle")
                 }
                 .buttonStyle(.bordered)
                 .disabled(model.isDownloadingGameClient || model.isBusy)
@@ -264,7 +264,7 @@ struct ContentView: View {
                 Button {
                     model.downloadClassicClient()
                 } label: {
-                    Label("下載經典版客戶端", systemImage: "arrow.down.circle")
+                    Label("下載經典版", systemImage: "arrow.down.circle")
                 }
                 .buttonStyle(.bordered)
                 .disabled(model.isDownloadingGameClient || model.isBusy)
@@ -330,7 +330,7 @@ struct ContentView: View {
                     Button {
                         model.downloadMapleStoryClient()
                     } label: {
-                        Label("下載新楓之谷客戶端", systemImage: "arrow.down.circle")
+                        Label("下載新楓之谷", systemImage: "arrow.down.circle")
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.isDownloadingGameClient || model.isBusy)

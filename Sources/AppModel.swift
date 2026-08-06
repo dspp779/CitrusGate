@@ -656,7 +656,7 @@ final class AppModel: ObservableObject {
 
         let panel = NSOpenPanel()
         panel.title = "選擇下載資料夾"
-        panel.message = "新楓之谷：經典版客戶端將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
+        panel.message = "新楓之谷：經典版將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
         panel.prompt = "下載到此處"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -670,7 +670,7 @@ final class AppModel: ObservableObject {
             config: .nxdlClassic,
             destination: destination,
             progressTitle: "下載新楓之谷：經典版",
-            statusWhileDownloading: "正在下載新楓之谷：經典版客戶端…",
+            statusWhileDownloading: "正在下載新楓之谷：經典版…",
             missingExecutableHint: "下載完成，請手動選擇 Maplestory_Classic.exe",
             logLabel: "經典版"
         )
@@ -682,7 +682,7 @@ final class AppModel: ObservableObject {
 
         let panel = NSOpenPanel()
         panel.title = "選擇下載資料夾"
-        panel.message = "新楓之谷客戶端將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
+        panel.message = "新楓之谷將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
         panel.prompt = "下載到此處"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -695,8 +695,8 @@ final class AppModel: ObservableObject {
             targetGame: GameDefinition.mapleStory,
             config: .cmsdlMapleStory,
             destination: destination,
-            progressTitle: "下載新楓之谷客戶端",
-            statusWhileDownloading: "正在下載新楓之谷客戶端…",
+            progressTitle: "下載新楓之谷",
+            statusWhileDownloading: "正在下載新楓之谷…",
             missingExecutableHint: "下載完成，請手動選擇 MapleStory.exe",
             logLabel: "新楓之谷"
         )

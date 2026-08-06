@@ -60,6 +60,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private let exePathLabel = NSTextField(wrappingLabelWithString: "")
     private let chooseExeButton = NSButton(title: "選擇主程式…", target: nil, action: nil)
     private var exeContainer: NSStackView!
+    private var rootStackView: NSStackView!
 
     // Classic Mode UI
     private let openClassicWebButton = NSButton(title: "開啟官方登入網頁", target: nil, action: nil)
@@ -92,6 +93,11 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         tableView.reloadData()
         restoreLastGame()
         updateVisibility()
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        updateWindowSize(animate: false)
     }
 
     deinit {
@@ -240,31 +246,31 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         buttonRow.distribution = .fillEqually
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
 
-        let root = NSStackView(views: [
+        rootStackView = NSStackView(views: [
             statusLabel, scrollView, imageView, qrStatusLabel, classicContainer, otpBlock, exeContainer, buttonRow, backButton,
         ])
-        root.orientation = .vertical
-        root.alignment = .centerX
-        root.spacing = 10
-        root.edgeInsets = NSEdgeInsets(top: 14, left: 0, bottom: 14, right: 0)
-        root.translatesAutoresizingMaskIntoConstraints = false
+        rootStackView.orientation = .vertical
+        rootStackView.alignment = .centerX
+        rootStackView.spacing = 10
+        rootStackView.edgeInsets = NSEdgeInsets(top: 14, left: 0, bottom: 14, right: 0)
+        rootStackView.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(root)
+        view.addSubview(rootStackView)
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            root.topAnchor.constraint(equalTo: view.topAnchor),
-            root.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            otpBlock.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            otpBlock.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            exeContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            exeContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            classicContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            classicContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            buttonRow.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            buttonRow.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            rootStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            rootStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            rootStackView.topAnchor.constraint(equalTo: view.topAnchor),
+            rootStackView.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: rootStackView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: rootStackView.trailingAnchor),
+            otpBlock.leadingAnchor.constraint(equalTo: rootStackView.leadingAnchor),
+            otpBlock.trailingAnchor.constraint(equalTo: rootStackView.trailingAnchor),
+            exeContainer.leadingAnchor.constraint(equalTo: rootStackView.leadingAnchor),
+            exeContainer.trailingAnchor.constraint(equalTo: rootStackView.trailingAnchor),
+            classicContainer.leadingAnchor.constraint(equalTo: rootStackView.leadingAnchor),
+            classicContainer.trailingAnchor.constraint(equalTo: rootStackView.trailingAnchor),
+            buttonRow.leadingAnchor.constraint(equalTo: rootStackView.leadingAnchor),
+            buttonRow.trailingAnchor.constraint(equalTo: rootStackView.trailingAnchor),
         ])
     }
 
@@ -285,6 +291,28 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             tableView.reloadData()
         }
         updateButtons()
+        updateWindowSize(animate: view.window != nil)
+    }
+
+    private func updateWindowSize(animate: Bool = true) {
+        view.layoutSubtreeIfNeeded()
+        let targetHeight = rootStackView.fittingSize.height
+        guard targetHeight > 0 else { return }
+
+        preferredContentSize = NSSize(width: 440, height: targetHeight)
+
+        if let window = view.window {
+            let currentContentRect = window.contentRect(forFrameRect: window.frame)
+            if abs(currentContentRect.height - targetHeight) > 1 {
+                let newFrame = window.frameRect(forContentRect: NSRect(
+                    x: window.frame.origin.x,
+                    y: window.frame.origin.y + (currentContentRect.height - targetHeight),
+                    width: 440,
+                    height: targetHeight
+                ))
+                window.setFrame(newFrame, display: true, animate: animate)
+            }
+        }
     }
 
     private func otpBlockVisibility(_ visible: Bool) {

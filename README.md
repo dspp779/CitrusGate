@@ -10,11 +10,13 @@
 | --- | --- | --- |
 | 系統需求 | macOS 13 以上 | macOS 10.12 以上（Intel） |
 | 架構 | Apple Silicon + Intel | 僅 Intel (x86_64) |
-| 功能 | 完整（含 Wine 啟動、進階模式） | 經典 AppKit 介面（含主程式選擇、Cyder 啟動與經典版支援） |
+| 功能 | 完整（含 Wine 啟動、進階模式） | 經典 AppKit 介面（含動態視窗高度貼合、Quarantine 防護、主程式選擇、Cyder 啟動與經典版支援） |
 | 建置 | `./build.sh` | `./build-legacy.sh` |
 | 輸出 | `dist/Beanfun OTP.app` | `dist/Beanfun OTP Legacy.app` |
 
 10.12–12 請用 Legacy。13 以上請用一般版（最新版本皆為 `v0.6.0`）。Beanfun 登入協定若變更，兩個版本的 client 都需要同步更新。
+
+兩版於呼叫 `.exe` 遊戲主程式前皆會自動進行 macOS Quarantine（`com.apple.quarantine` 隔離標記）檢查與清除，避免 Wine 或 Cyder 因權限阻擋而啟動失敗。
 
 以下「一般模式」與「進階模式」說明僅適用於 **Beanfun OTP**（Modern 版）。
 
@@ -32,7 +34,7 @@ App 每次啟動預設使用一般模式。先從附有官方縮圖的精簡清�
 
 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) **不能**跑新楓之谷。啟動後按鈕會暫時停用約 10 秒並顯示狀態。
 
-一般模式使用精簡的固定大小視窗，QR 畫面只保留 QR Code、掃描說明、剩餘時間與重新產生按鈕。QR 區域以一致的 `12pt` 四邊白色留白延伸至視窗上、左、右邊緣。視窗不可縮放或進入全螢幕；系統選單不顯示「編輯」、「顯示方式」、「遊戲」與「視窗」，保持最純粹乾淨的介面。
+一般模式使用精簡的固定大小視窗，QR 畫面只保留 QR Code、掃描說明、剩餘時間與重新產生按鈕。QR 區域以一致的 `12pt` 四邊白色留白延伸至視窗上、左、右邊緣。視窗不可縮放或進入全螢幕；系統選單不顯示「編輯」、「顯示方式」、「遊戲」與「視窗」，保持最純粹乾淨的介面。Legacy 版本則支援動態內容高度貼合 (`Content Auto-Fit`)，於切換頁面時會平滑自動調整視窗高度，避免下方多餘留白。
 
 另支援**楓之谷：經典版**（教學稱新楓之谷：經典版）：無 QR。選擇 `Maplestory_Classic.exe` 後開啟官方登入網頁；網頁透過 `NexonPlug://` 回傳參數，App 以 `open -n -b local.cyder.app … --args` 優先指定 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) 啟動（未安裝時會提示，通常不必改 Finder「打開方式」）。可在頁面直接將 `NexonPlug` 設為由 Beanfun OTP 處理（位在說明文案正下方）；其他非經典版 gameCode 會自動轉發官方 NexonPlug.app。測完可改回 `com.nexon.plug`。Beanfun OTP 僅允許單一實例；若由網頁 `NexonPlug://` 冷啟動並成功開啟經典版，啟動完成後會自動結束。完整步驟見 [`docs/macos-player-guide-classic.md`](docs/macos-player-guide-classic.md)。App 內「下載經典版客戶端」使用釘選版 [nxdl](https://github.com/HikariCalyx/nxdl)；整合細節（路徑還原、PTY／TUI 進度）見 [`docs/nxdl-classic-download.md`](docs/nxdl-classic-download.md)。
 

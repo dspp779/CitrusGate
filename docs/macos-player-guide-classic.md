@@ -1,6 +1,6 @@
 # 在 macOS 玩新楓之谷：經典版（玩家教學）
 
-最後更新：2026-07-24
+最後更新：2026-08-06
 
 本教學說明如何在 Apple Silicon／Intel Mac 上遊玩**新楓之谷：經典版**。這不是官方支援路徑，遊戲與登入服務隨時可能變更。
 
@@ -10,7 +10,7 @@ App 內顯示名稱為「楓之谷：經典版」。新楓之谷（非經典）�
 
 | 項目 | 用途 |
 | --- | --- |
-| Beanfun OTP（本專案 Modern 版，macOS 13+） | 選擇經典版主程式、開啟網頁登入、接收 `NexonPlug://` 並啟動 |
+| Beanfun OTP（本專案 Modern 版 macOS 13+，或 Legacy 版 macOS 10.12+） | 選擇經典版主程式、開啟網頁登入、接收 `NexonPlug://` 並啟動 |
 | [Cyder](https://github.com/dspp779/CyderBits/releases/latest) | 以 `open -n … --args …` 開啟 `Maplestory_Classic.exe` |
 | 經典版主程式 `Maplestory_Classic.exe` | 遊戲客戶端（可手動準備，或用 App 內「下載經典版客戶端」） |
 | Beanfun 帳號 | 在官方網頁登入 |
@@ -36,6 +36,7 @@ Cyder 下載：<https://github.com/dspp779/CyderBits/releases/latest>
 1. **經典版請用 Cyder 正式版／`open`**，不要用北美 MapleStory Launcher，也不要用 Cyder 新楓之谷分支（皆為 oem25／CrossOver 25，缺 `EventWriteEx`）。
 2. **Beanfun OTP 僅單一實例**：網頁再次呼叫 `NexonPlug://` 時交給現有視窗，不會再開第二個。
 3. **冷啟動會自動結束**：若 App 本來沒開、被網頁喚起並成功啟動遊戲，啟動完成後會自動關閉；失敗或取消選檔則保持開啟以便重試。
+4. **自動 Quarantine 清除**：App 於啟動 `.exe` 前會自動檢測並移除 `com.apple.quarantine` 隔離標記，無須手動下指令清理。
 
 ---
 

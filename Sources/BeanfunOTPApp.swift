@@ -126,6 +126,25 @@ struct BeanfunOTPApp: App {
                     }
                 }
             }
+            CommandMenu("主程式") {
+                Button("選擇主程式") {
+                    model.chooseExecutable()
+                }
+                Button("下載主程式") {
+                    if model.selectedGame?.id == GameDefinition.mapleStoryClassic.id {
+                        model.downloadClassicClient()
+                    } else {
+                        model.downloadMapleStoryClient()
+                    }
+                }
+                Button("更新主程式") {
+                    if model.selectedGame?.id == GameDefinition.mapleStoryClassic.id {
+                        model.updateClassicClient()
+                    } else {
+                        model.updateMapleStoryClient()
+                    }
+                }
+            }
         }
     }
 }

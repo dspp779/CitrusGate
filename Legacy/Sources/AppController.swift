@@ -108,6 +108,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     // MARK: - UI construction
 
     private func buildUI() {
+        setupMainMenu()
         statusLabel.alignment = .center
         statusLabel.font = NSFont.systemFont(ofSize: 13)
 
@@ -283,9 +284,10 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         classicContainer.isHidden = screen != .classic
         otpBlockVisibility(screen == .otp)
         exeContainer.isHidden = !(screen == .qr || screen == .accounts || screen == .otp || screen == .classic)
-        // Classic screen uses primaryButton for picking the executable; hide the duplicate in exeContainer.
-        chooseExeButton.isHidden = screen == .classic
-        downloadMapleStoryButton.isHidden = selectedGame?.id != GameDefinition.mapleStory.id || screen == .classic
+        let hasExe = !executablePath.isEmpty && FileManager.default.fileExists(atPath: executablePath)
+        chooseExeButton.isHidden = hasExe || screen == .classic
+        downloadMapleStoryButton.isHidden = hasExe || selectedGame?.id != GameDefinition.mapleStory.id || screen == .classic
+        downloadClassicButton.isHidden = hasExe || selectedGame?.id != GameDefinition.mapleStoryClassic.id
 
         if screen == .games || screen == .accounts {
             tableView.reloadData()
@@ -326,6 +328,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private func updateButtons() {
         switch screen {
         case .games:
+            primaryButton.isHidden = false
             primaryButton.title = "下一步"
             primaryButton.isEnabled = tableView.selectedRow >= 0
             secondaryButton.isHidden = true
@@ -333,6 +336,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             copyCmdButton.isHidden = true
             backButton.isHidden = true
         case .qr:
+            primaryButton.isHidden = false
             primaryButton.title = "重新產生"
             primaryButton.isEnabled = true
             secondaryButton.isHidden = true
@@ -340,6 +344,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             copyCmdButton.isHidden = true
             backButton.isHidden = false
         case .accounts:
+            primaryButton.isHidden = false
             primaryButton.title = "取得 OTP"
             primaryButton.isEnabled = selectedAccountIndex >= 0
             secondaryButton.isHidden = true
@@ -347,6 +352,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             copyCmdButton.isHidden = true
             backButton.isHidden = false
         case .otp:
+            primaryButton.isHidden = false
             if selectedGame?.id == GameDefinition.mapleStory.id {
                 primaryButton.title = "開啟"
                 primaryButton.isEnabled = isValidExecutablePath(executablePath)
@@ -372,8 +378,14 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             copyCmdButton.isHidden = false
             backButton.isHidden = false
         case .classic:
-            primaryButton.title = "選擇主程式…"
-            primaryButton.isEnabled = !isDownloadingGameClient
+            let hasExe = !executablePath.isEmpty && FileManager.default.fileExists(atPath: executablePath)
+            if hasExe {
+                primaryButton.isHidden = true
+            } else {
+                primaryButton.title = "選擇主程式…"
+                primaryButton.isHidden = false
+                primaryButton.isEnabled = !isDownloadingGameClient
+            }
             secondaryButton.isHidden = true
             wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
@@ -383,6 +395,10 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     private func updateGameClientDownloadUI() {
         let downloading = isDownloadingGameClient
+        let hasExe = !executablePath.isEmpty && FileManager.default.fileExists(atPath: executablePath)
+        downloadClassicButton.isHidden = hasExe || selectedGame?.id != GameDefinition.mapleStoryClassic.id
+        downloadMapleStoryButton.isHidden = hasExe || selectedGame?.id != GameDefinition.mapleStory.id || screen == .classic
+        chooseExeButton.isHidden = hasExe || screen == .classic
         downloadClassicButton.isEnabled = !downloading
         downloadMapleStoryButton.isEnabled = !downloading
         openClassicWebButton.isEnabled = !downloading
@@ -490,6 +506,70 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         guard selectedGame?.id == GameDefinition.mapleStoryClassic.id else { return }
         guard !isDownloadingGameClient else { return }
 
+        let destination: URL
+        if !executablePath.isEmpty, FileManager.default.fileExists(atPath: executablePath) {
+            destination = URL(fileURLWithPath: executablePath).deletingLastPathComponent()
+        } else {
+            let panel = NSOpenPanel()
+            panel.title = "選擇下載資料夾"
+            panel.message = "新楓之谷：經典版將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
+            panel.prompt = "下載到此處"
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.canCreateDirectories = true
+            panel.allowsMultipleSelection = false
+
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            destination = url
+        }
+
+        beginGameClientDownload(
+            targetGame: GameDefinition.mapleStoryClassic,
+            config: .nxdlClassic,
+            destination: destination,
+            progressTitle: "下載新楓之谷：經典版",
+            statusWhileDownloading: "正在下載新楓之谷：經典版…",
+            missingExecutableHint: "下載完成，請手動選擇 Maplestory_Classic.exe",
+            logLabel: "經典版"
+        )
+    }
+
+    @objc private func handleDownloadMapleStory() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else { return }
+        guard !isDownloadingGameClient else { return }
+
+        let destination: URL
+        if !executablePath.isEmpty, FileManager.default.fileExists(atPath: executablePath) {
+            destination = URL(fileURLWithPath: executablePath).deletingLastPathComponent()
+        } else {
+            let panel = NSOpenPanel()
+            panel.title = "選擇下載資料夾"
+            panel.message = "新楓之谷將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
+            panel.prompt = "下載到此處"
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.canCreateDirectories = true
+            panel.allowsMultipleSelection = false
+
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            destination = url
+        }
+
+        beginGameClientDownload(
+            targetGame: GameDefinition.mapleStory,
+            config: .cmsdlMapleStory,
+            destination: destination,
+            progressTitle: "下載新楓之谷",
+            statusWhileDownloading: "正在下載新楓之谷…",
+            missingExecutableHint: "下載完成，請手動選擇 MapleStory.exe",
+            logLabel: "新楓之谷"
+        )
+    }
+
+    private func downloadClassicNewLocation() {
+        guard selectedGame?.id == GameDefinition.mapleStoryClassic.id else { return }
+        guard !isDownloadingGameClient else { return }
+
         let panel = NSOpenPanel()
         panel.title = "選擇下載資料夾"
         panel.message = "新楓之谷：經典版將下載到此資料夾。檔案很大，請預留足夠的磁碟空間。"
@@ -512,7 +592,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         )
     }
 
-    @objc private func handleDownloadMapleStory() {
+    private func downloadMapleStoryNewLocation() {
         guard selectedGame?.id == GameDefinition.mapleStory.id else { return }
         guard !isDownloadingGameClient else { return }
 
@@ -536,6 +616,45 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             missingExecutableHint: "下載完成，請手動選擇 MapleStory.exe",
             logLabel: "新楓之谷"
         )
+    }
+
+    private func setupMainMenu() {
+        let mainMenu = NSApp.mainMenu ?? NSMenu()
+        NSApp.mainMenu = mainMenu
+
+        let exeMenuItem = NSMenuItem(title: "主程式", action: nil, keyEquivalent: "")
+        let exeSubMenu = NSMenu(title: "主程式")
+
+        let chooseItem = NSMenuItem(title: "選擇主程式", action: #selector(handleChooseExecutable), keyEquivalent: "")
+        chooseItem.target = self
+        exeSubMenu.addItem(chooseItem)
+
+        let downloadItem = NSMenuItem(title: "下載主程式", action: #selector(handleDownloadMenuAction), keyEquivalent: "")
+        downloadItem.target = self
+        exeSubMenu.addItem(downloadItem)
+
+        let updateItem = NSMenuItem(title: "更新主程式", action: #selector(handleUpdateMenuAction), keyEquivalent: "")
+        updateItem.target = self
+        exeSubMenu.addItem(updateItem)
+
+        exeMenuItem.submenu = exeSubMenu
+        mainMenu.addItem(exeMenuItem)
+    }
+
+    @objc private func handleDownloadMenuAction() {
+        if selectedGame?.id == GameDefinition.mapleStoryClassic.id {
+            downloadClassicNewLocation()
+        } else {
+            downloadMapleStoryNewLocation()
+        }
+    }
+
+    @objc private func handleUpdateMenuAction() {
+        if selectedGame?.id == GameDefinition.mapleStoryClassic.id {
+            handleDownloadClassic()
+        } else {
+            handleDownloadMapleStory()
+        }
     }
 
     private func presentDiskGate(evaluation: DiskSpaceEvaluation) -> Bool {

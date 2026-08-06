@@ -22,6 +22,14 @@ enum QRLoginStatus: Equatable {
     case expired
 }
 
+enum ClassicUpdateStatus: Equatable {
+    case none
+    case checking
+    case upToDate
+    case updateAvailable
+    case maintenanceOrError(String)
+}
+
 struct OTPResult: Equatable {
     let value: String
     let retrievedAt: Date

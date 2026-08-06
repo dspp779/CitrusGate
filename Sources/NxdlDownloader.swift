@@ -14,7 +14,10 @@ struct GameClientToolConfig: Equatable {
     var checkArguments: [String] { [gameAlias, "--check", "--json"] }
 
     func downloadArguments(destinationPath: String) -> [String] {
-        [gameAlias, "--download", destinationPath]
+        if self == .cmsdlMapleStory {
+            return [gameAlias, "--download", destinationPath, "--purge-wz-files"]
+        }
+        return [gameAlias, "--download", destinationPath]
     }
 
     static let nxdlClassic = GameClientToolConfig(

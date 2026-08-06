@@ -67,6 +67,9 @@ final class AppModel: ObservableObject {
         didSet {
             guard let selectedGame else { return }
             defaults.set(executablePath, forKey: executablePathKey(for: selectedGame))
+            if selectedGame.id == GameDefinition.mapleStoryClassic.id {
+                checkClassicClientUpdate()
+            }
         }
     }
     @Published var advancedLaunchCommandStyle: AdvancedLaunchCommandStyle {
@@ -79,6 +82,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var classicDownloadProgress = NxdlDownloadProgressState()
     @Published private(set) var gameClientDownloadTitle = ""
     @Published var showClassicDownloadProgress = false
+    @Published private(set) var classicUpdateStatus: ClassicUpdateStatus = .none
 
     private let defaults: UserDefaults
     private var pendingClassicPassargTokens: [String]?
@@ -95,6 +99,7 @@ final class AppModel: ObservableObject {
     private var otpCountdownTask: Task<Void, Never>?
     private var launchCooldownTask: Task<Void, Never>?
     private var classicDownloadTask: Task<Void, Never>?
+    private var classicUpdateCheckTask: Task<Void, Never>?
     private static let launchCooldownNanoseconds: UInt64 = 10_000_000_000
     private var pendingLaunchKind: PendingLaunchKind = .defaultOpen
     private lazy var client = BeanfunClient { [weak self] message in
@@ -188,6 +193,7 @@ final class AppModel: ObservableObject {
         if game.authFlow == .webNexonPlug {
             screen = .classic
             statusMessage = "已選擇\(game.name)。請選擇主程式並開啟登入網頁。"
+            checkClassicClientUpdate()
             // When a Classic NexonPlug URL is already driving this selection,
             // handleClassicNexonPlug() owns the picker; scheduling this delayed
             // picker too would show two pickers in a row.
@@ -676,6 +682,89 @@ final class AppModel: ObservableObject {
         )
     }
 
+    func updateClassicClient() {
+        guard selectedGame?.id == GameDefinition.mapleStoryClassic.id else { return }
+        guard !isDownloadingGameClient else { return }
+        let path = normalizedExecutablePath
+        guard !path.isEmpty, isValidExecutablePath(path) else {
+            downloadClassicClient()
+            return
+        }
+        let destination = URL(fileURLWithPath: path).deletingLastPathComponent()
+        startGameClientDownload(
+            targetGame: GameDefinition.mapleStoryClassic,
+            config: .nxdlClassic,
+            destination: destination,
+            progressTitle: "更新新楓之谷：經典版",
+            statusWhileDownloading: "正在更新新楓之谷：經典版…",
+            missingExecutableHint: "更新完成，請手動選擇 Maplestory_Classic.exe",
+            logLabel: "經典版"
+        )
+    }
+
+    func checkClassicClientUpdate() {
+        guard selectedGame?.id == GameDefinition.mapleStoryClassic.id else {
+            classicUpdateStatus = .none
+            return
+        }
+        let path = normalizedExecutablePath
+        guard !path.isEmpty, isValidExecutablePath(path) else {
+            classicUpdateStatus = .none
+            return
+        }
+
+        classicUpdateCheckTask?.cancel()
+        classicUpdateStatus = .checking
+
+        classicUpdateCheckTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let serverTotalSize = try await self.nxdlDownloader.probeTotalSize(config: .nxdlClassic) { _ in }
+                guard !Task.isCancelled else { return }
+
+                let exeURL = URL(fileURLWithPath: path)
+                let folderURL = exeURL.deletingLastPathComponent()
+                let localSize = self.calculateDirectorySize(at: folderURL)
+                let savedTotalKey = "ClassicManifestTotalSize.\(folderURL.path)"
+                let savedTotal = self.defaults.object(forKey: savedTotalKey) as? UInt64
+
+                if (savedTotal != nil && savedTotal == serverTotalSize) || localSize >= UInt64(Double(serverTotalSize) * 0.9) {
+                    self.classicUpdateStatus = .upToDate
+                } else {
+                    self.classicUpdateStatus = .updateAvailable
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                let errorMsg = error.localizedDescription
+                if errorMsg.contains("failed to parse game-info response")
+                    || errorMsg.contains("failed to lookup address information")
+                    || errorMsg.contains("Dns Failed")
+                    || errorMsg.contains("HTTP request failed")
+                    || errorMsg.contains("ConnectFailed")
+                    || errorMsg.contains("timed out") {
+                    self.classicUpdateStatus = .maintenanceOrError("無法檢查更新（可能是伺服器維修中）")
+                } else {
+                    self.classicUpdateStatus = .maintenanceOrError("無法檢查更新：\(errorMsg)")
+                }
+            }
+        }
+    }
+
+    private func calculateDirectorySize(at url: URL) -> UInt64 {
+        guard let enumerator = FileManager.default.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+        var total: UInt64 = 0
+        for case let fileURL as URL in enumerator {
+            if let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey]), let size = values.fileSize {
+                total += UInt64(size)
+            }
+        }
+        return total
+    }
+
     func downloadMapleStoryClient() {
         guard selectedGame?.id == GameDefinition.mapleStory.id else { return }
         guard !isDownloadingGameClient else { return }
@@ -698,6 +787,26 @@ final class AppModel: ObservableObject {
             progressTitle: "下載新楓之谷",
             statusWhileDownloading: "正在下載新楓之谷…",
             missingExecutableHint: "下載完成，請手動選擇 MapleStory.exe",
+            logLabel: "新楓之谷"
+        )
+    }
+
+    func updateMapleStoryClient() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else { return }
+        guard !isDownloadingGameClient else { return }
+        let path = normalizedExecutablePath
+        guard !path.isEmpty, isValidExecutablePath(path) else {
+            downloadMapleStoryClient()
+            return
+        }
+        let destination = URL(fileURLWithPath: path).deletingLastPathComponent()
+        startGameClientDownload(
+            targetGame: GameDefinition.mapleStory,
+            config: .cmsdlMapleStory,
+            destination: destination,
+            progressTitle: "更新新楓之谷",
+            statusWhileDownloading: "正在更新新楓之谷…",
+            missingExecutableHint: "更新完成，請手動選擇 MapleStory.exe",
             logLabel: "新楓之谷"
         )
     }
@@ -793,6 +902,11 @@ final class AppModel: ObservableObject {
                             }
                         }
                     }
+                }
+
+                if targetGame.id == GameDefinition.mapleStoryClassic.id {
+                    self.defaults.set(total, forKey: "ClassicManifestTotalSize.\(destination.path)")
+                    self.classicUpdateStatus = .upToDate
                 }
 
                 if let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination) {
@@ -968,6 +1082,10 @@ final class AppModel: ObservableObject {
         } catch {
             present(error)
         }
+    }
+
+    var hasValidExecutable: Bool {
+        isValidExecutablePath(normalizedExecutablePath)
     }
 
     private var normalizedExecutablePath: String {

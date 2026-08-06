@@ -174,7 +174,7 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             }
-            if model.selectedGame?.id == GameDefinition.mapleStory.id {
+            if !model.hasValidExecutable, model.selectedGame?.id == GameDefinition.mapleStory.id {
                 Button {
                     model.downloadMapleStoryClient()
                 } label: {
@@ -260,14 +260,16 @@ struct ContentView: View {
                 model.claimNexonPlugHandler()
             }
             .buttonStyle(.link)
-            VStack(spacing: 8) {
-                Button {
-                    model.downloadClassicClient()
-                } label: {
-                    Label("下載經典版", systemImage: "arrow.down.circle")
+            if !model.hasValidExecutable {
+                VStack(spacing: 8) {
+                    Button {
+                        model.downloadClassicClient()
+                    } label: {
+                        Label("下載經典版", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isDownloadingGameClient || model.isBusy)
                 }
-                .buttonStyle(.bordered)
-                .disabled(model.isDownloadingGameClient || model.isBusy)
             }
             Button {
                 model.openClassicLoginPage()
@@ -326,7 +328,7 @@ struct ContentView: View {
                     .controlSize(.large)
                     .disabled(model.isBusy)
                 }
-                if model.selectedGame?.id == GameDefinition.mapleStory.id {
+                if !model.hasValidExecutable, model.selectedGame?.id == GameDefinition.mapleStory.id {
                     Button {
                         model.downloadMapleStoryClient()
                     } label: {
@@ -762,24 +764,43 @@ private struct ExecutablePickerSection: View {
     var body: some View {
         VStack(spacing: 4) {
             if let game = model.selectedGame {
-                Text(model.executablePath.isEmpty
-                     ? "（未選擇「\(game.name)」主程式）"
-                     : "主程式：\(model.executablePath)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if model.hasValidExecutable {
+                    Text("主程式：\(model.executablePath)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                } else if !model.executablePath.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("找不到主程式：\(model.executablePath)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.orange)
+                    }
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
 
-                Button("選擇「\(game.name)」主程式…") {
-                    model.chooseExecutable()
-                }
-                .buttonStyle(.link)
+                    Button("重新選擇「\(game.name)」主程式…") {
+                        model.chooseExecutable()
+                    }
+                    .buttonStyle(.link)
+                } else {
+                    Text("（未選擇「\(game.name)」主程式）")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
 
-                Text("·")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    Button("選擇「\(game.name)」主程式…") {
+                        model.chooseExecutable()
+                    }
+                }
             }
-            Button("選擇其他遊戲") {
+
+            Spacer().frame(height: 4)
+
+            Button("‹ 選擇其他遊戲") {
                 model.showGamePicker()
             }
             .buttonStyle(.plain)

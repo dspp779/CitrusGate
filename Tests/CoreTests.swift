@@ -32,7 +32,8 @@ enum CoreTests {
         try testDiskSpaceGate()
         try testClientCheckJSONParser()
         try testSessionExpiredDetection()
-        print("CoreTests: 29 tests passed")
+        try testClassicUpdateStatusEnum()
+        print("CoreTests: 30 tests passed")
     }
 
 
@@ -746,6 +747,25 @@ enum CoreTests {
 
         let networkError = BeanfunError.network("連線逾時")
         try expect(!networkError.isSessionExpired, "network timeout is not session expiration")
+    }
+
+    private static func testClassicUpdateStatusEnum() throws {
+        let none: ClassicUpdateStatus = .none
+        let checking: ClassicUpdateStatus = .checking
+        let upToDate: ClassicUpdateStatus = .upToDate
+        let updateAvailable: ClassicUpdateStatus = .updateAvailable
+        let maintenance: ClassicUpdateStatus = .maintenanceOrError("無法檢查更新（可能是伺服器維修中）")
+
+        try expect(none == .none, "none equality")
+        try expect(checking == .checking, "checking equality")
+        try expect(upToDate == .upToDate, "upToDate equality")
+        try expect(updateAvailable == .updateAvailable, "updateAvailable equality")
+        try expect(maintenance != .upToDate, "maintenance inequality")
+        if case let .maintenanceOrError(msg) = maintenance {
+            try expect(msg.contains("伺服器維修中"), "maintenance message string")
+        } else {
+            throw TestFailure(message: "expected maintenanceOrError case")
+        }
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

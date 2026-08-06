@@ -84,7 +84,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private let backButton = NSButton(title: "選擇其他遊戲", target: nil, action: nil)
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 480))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 360))
         buildUI()
     }
 

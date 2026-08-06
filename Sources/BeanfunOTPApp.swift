@@ -95,7 +95,7 @@ struct BeanfunOTPApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 400, height: 440)
+        .defaultSize(width: 400, height: 360)
         .windowResizability(.contentSize)
         .commandsRemoved()
         .commands {

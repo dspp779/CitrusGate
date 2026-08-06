@@ -820,21 +820,29 @@ private struct GameArtwork: View {
 }
 
 private struct FixedWindowConfigurator: NSViewRepresentable {
+    final class Coordinator {
+        var hasAdjustedInitialFrame = false
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     let mode: AppMode
     let screen: AppScreen
     var extendContentUnderTitlebar: Bool = false
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        configure(view)
+        configure(view, coordinator: context.coordinator)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        configure(nsView)
+        configure(nsView, coordinator: context.coordinator)
     }
 
-    private func configure(_ view: NSView) {
+    private func configure(_ view: NSView, coordinator: Coordinator) {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             if extendContentUnderTitlebar {
@@ -857,13 +865,14 @@ private struct FixedWindowConfigurator: NSViewRepresentable {
                     let minH: CGFloat = (screen == .games) ? 360 : ((screen == .qr) ? 440 : 300)
                     targetHeight = max(fitH, minH)
                 } else {
-                    targetHeight = 440
+                    targetHeight = 360
                 }
             } else {
                 targetHeight = 640
             }
 
             let currentContentRect = window.contentRect(forFrameRect: window.frame)
+            let shouldAnimate = coordinator.hasAdjustedInitialFrame
             if abs(currentContentRect.height - targetHeight) > 1 || abs(currentContentRect.width - targetWidth) > 1 {
                 let newFrame = window.frameRect(forContentRect: NSRect(
                     x: window.frame.origin.x,
@@ -871,7 +880,8 @@ private struct FixedWindowConfigurator: NSViewRepresentable {
                     width: targetWidth,
                     height: targetHeight
                 ))
-                window.setFrame(newFrame, display: true, animate: true)
+                window.setFrame(newFrame, display: true, animate: shouldAnimate)
+                coordinator.hasAdjustedInitialFrame = true
             }
         }
     }

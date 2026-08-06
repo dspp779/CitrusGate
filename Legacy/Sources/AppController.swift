@@ -296,7 +296,8 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     private func updateWindowSize(animate: Bool = true) {
         view.layoutSubtreeIfNeeded()
-        let targetHeight = rootStackView.fittingSize.height
+        let minH: CGFloat = (screen == .accounts || screen == .otp) ? 420 : ((screen == .qr) ? 440 : 340)
+        let targetHeight = max(rootStackView.fittingSize.height, minH)
         guard targetHeight > 0 else { return }
 
         preferredContentSize = NSSize(width: 440, height: targetHeight)

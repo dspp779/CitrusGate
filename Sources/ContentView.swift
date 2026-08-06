@@ -494,7 +494,7 @@ struct ContentView: View {
 
                 ExecutablePickerSection(model: model)
             }
-            .frame(maxWidth: .infinity, minHeight: 200)
+            .frame(maxWidth: .infinity, minHeight: 320)
             .padding()
         }
     }
@@ -862,7 +862,13 @@ private struct FixedWindowConfigurator: NSViewRepresentable {
                 if let contentView = window.contentView {
                     contentView.layoutSubtreeIfNeeded()
                     let fitH = contentView.fittingSize.height
-                    let minH: CGFloat = (screen == .games) ? 360 : ((screen == .qr) ? 440 : 300)
+                    let minH: CGFloat
+                    switch screen {
+                    case .games, .welcome: minH = 360
+                    case .qr: minH = 440
+                    case .accounts, .otp: minH = 420
+                    case .classic: minH = 380
+                    }
                     targetHeight = max(fitH, minH)
                 } else {
                     targetHeight = 360

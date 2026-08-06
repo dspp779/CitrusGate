@@ -124,8 +124,7 @@ struct ContentView: View {
                         } label: {
                             VStack(spacing: 6) {
                                 GameArtwork(game: game)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 64)
+                                    .frame(height: 60)
                                 Text(game.name)
                                     .font(.subheadline.weight(.semibold))
                                     .lineLimit(2)
@@ -133,7 +132,7 @@ struct ContentView: View {
                                     .frame(maxWidth: .infinity)
                             }
                             .padding(6)
-                            .frame(maxWidth: .infinity, alignment: .top)
+                            .frame(maxWidth: .infinity, minHeight: 96, alignment: .top)
                             .background(
                                 hoveredGameID == game.id
                                     ? Color.secondary.opacity(0.10)
@@ -149,7 +148,7 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(maxWidth: 440, maxHeight: .infinity)
+        .frame(maxWidth: 440, minHeight: 320)
     }
 
     private var standardWelcomeView: some View {
@@ -801,7 +800,7 @@ private struct GameArtwork: View {
             ), let image = NSImage(contentsOf: url) {
                 Image(nsImage: image)
                     .resizable()
-                    .scaledToFill()
+                    .scaledToFit()
             } else {
                 ZStack {
                     LinearGradient(
@@ -855,7 +854,8 @@ private struct FixedWindowConfigurator: NSViewRepresentable {
                 if let contentView = window.contentView {
                     contentView.layoutSubtreeIfNeeded()
                     let fitH = contentView.fittingSize.height
-                    targetHeight = max(fitH, 260)
+                    let minH: CGFloat = (screen == .games) ? 360 : ((screen == .qr) ? 440 : 300)
+                    targetHeight = max(fitH, minH)
                 } else {
                     targetHeight = 440
                 }

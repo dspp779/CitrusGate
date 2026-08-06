@@ -1,76 +1,49 @@
 # Beanfun OTP for macOS
 
-本 repo 提供兩個 macOS 用戶端：**Beanfun OTP**（Modern，SwiftUI，macOS 13 以上，完整功能）與 **Beanfun OTP Legacy**（AppKit，macOS 10.12 以上，經典 AppKit 介面，支援自動帶參啟動）。Modern 版用 Gama Play 掃描 QR code 登入 Beanfun，選擇遊戲與帳號後取得 OTP。成品不依賴 Python、Homebrew、Node.js 或第三方套件。
+專為 macOS 設計的非官方 Beanfun 遊戲免網頁自動帶參登入工具。透過 Gama Play 掃描 QR Code，即可安全取得 OTP 並自動啟動遊戲。零外部套件依賴（無需 Python、Node.js 或 Homebrew）。
 
-目前支援 4 款可自動帶參/協定登入之服務：新楓之谷、楓之谷：經典版、新瑪奇與艾爾之光。爆爆王未納入，無命令列自動帶參功能之舊款遊戲已移除。
+## 核心特色
 
-## 兩個版本
+- **零依賴與獨立運作**：純原生成品，解壓即用，不需安裝任何執行環境。
+- **支援多款經典遊戲**：新楓之谷、楓之谷：經典版、新瑪奇、艾爾之光。
+- **自動帶參登入與啟動**：掃碼後自動獲取 OTP 並帶參啟動遊戲，單一帳號自動一鍵登入。
+- **自動 Quarantine 防護**：啟動前自動清除 macOS 隔離標記 (`com.apple.quarantine`)，避免 Wine / Cyder 權限阻擋。
+- **經典版 NexonPlug 協定整合**：支援網頁 `NexonPlug://` 協定接收與轉發，具備單一實例與冷啟動自動結束機制。
+- **客戶端一鍵下載**：整合釘選版客戶端下載器 ([cmsdl](docs/cmsdl-maplestory-download.md) / [nxdl](docs/nxdl-classic-download.md))，自動完成解壓與路徑還原。
 
-| | Beanfun OTP | Beanfun OTP Legacy |
+## 版本對比
+
+| 功能特性 | Beanfun OTP (Modern) | Beanfun OTP Legacy |
 | --- | --- | --- |
-| 系統需求 | macOS 13 以上 | macOS 10.12 以上（Intel） |
-| 架構 | Apple Silicon + Intel | 僅 Intel (x86_64) |
-| 功能 | 完整（含 Wine 啟動、進階模式） | 經典 AppKit 介面（含動態視窗高度貼合、Quarantine 防護、主程式選擇、Cyder 啟動與經典版支援） |
-| 建置 | `./build.sh` | `./build-legacy.sh` |
-| 輸出 | `dist/Beanfun OTP.app` | `dist/Beanfun OTP Legacy.app` |
+| **系統需求** | macOS 13.0+ (Ventura 以上) | macOS 10.12+ (Sierra 以上) |
+| **硬體架構** | Apple Silicon (M系列) + Intel | 僅 Intel (x86_64) |
+| **UI 框架** | SwiftUI 原生極簡介面 | AppKit 經典介面 + 動態高度貼合 |
+| **特色功能** | 一般/進階模式切換、Wine / Cyder 雙引擎啟動 | 輕量相容舊系統、單一實例自動搶占 |
+| **建置腳本** | `./build.sh` | `./build-legacy.sh` |
+| **輸出 App** | `dist/Beanfun OTP.app` | `dist/Beanfun OTP Legacy.app` |
 
-10.12–12 請用 Legacy。13 以上請用一般版（最新版本皆為 `v0.6.0`）。Beanfun 登入協定若變更，兩個版本的 client 都需要同步更新。
+## 主要功能亮點
 
-兩版於呼叫 `.exe` 遊戲主程式前皆會自動進行 macOS Quarantine（`com.apple.quarantine` 隔離標記）檢查與清除，避免 Wine 或 Cyder 因權限阻擋而啟動失敗。
+- **一般模式**：以精簡介面選擇遊戲與帳號，支援一鍵掃碼、自動取得 OTP 及遊戲啟動。
+- **進階模式 (Modern 版)**：查看完整 Shell 啟動指令、即時 Debug Log 與敏感參數維護。
+- **楓之谷：經典版支援**：配合 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) 使用，支援 `NexonPlug://` 帶參自動關閉。
+- **新楓之谷雙引擎**：可自由選擇北美官方 **MapleStory Launcher** (CrossOver 25) 或 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)。
 
-以下「一般模式」與「進階模式」說明僅適用於 **Beanfun OTP**（Modern 版）。
+## 玩家指南與專題文件
 
-## 一般模式
+- 📖 [新楓之谷安裝與遊玩教學](docs/macos-player-guide.md)
+- 📖 [新楓之谷：經典版安裝與遊玩教學](docs/macos-player-guide-classic.md)
+- ⚙️ [cmsdl 新楓之谷下載整合說明](docs/cmsdl-maplestory-download.md)
+- ⚙️ [nxdl 經典版下載整合說明](docs/nxdl-classic-download.md)
 
-App 每次啟動預設使用一般模式。先從附有官方縮圖的精簡清單選擇遊戲；第一次選擇該遊戲時會要求指定 `.exe`，每款遊戲的路徑會分別記住。畫面提供「選擇〈遊戲〉主程式…」與「選擇其他遊戲」按鈕（採垂直排版並以 `·` 點狀符號分隔）。按「取得 QR Code」後才會向 Beanfun 產生 QR Code，避免開啟 App 時過度頻繁請求。用 Gama Play 掃描並確認後：
-
-- 只有一個遊戲帳號時，會自動取得 OTP 並啟動遊戲。
-- 有多個帳號時，選擇帳號後按「以〈帳號〉開啟遊戲」。
-
-新楓之谷在一般模式提供「以 Cyder 開啟」與「以 MapleStory Launcher 開啟」。尚未安裝客戶端時，歡迎畫面／主程式區域可「下載新楓之谷客戶端」（釘選版 [cmsdl](https://github.com/HikariCalyx/cmsdl)；整合細節見 [`docs/cmsdl-maplestory-download.md`](docs/cmsdl-maplestory-download.md)）。新楓之谷可選：
-
-- **MapleStory Launcher**（內建 CrossOver 25／Wine 10，`maplestory` bottle，帶入 `--wait-children` 與 `--enable-alt-loader macdrv`）
-- 或不想裝 GMS Launcher 時，改用 [Cyder 新楓之谷分支](https://github.com/dspp779/CyderBits/releases/tag/v0.7.0-maplestory)（`v0.7.0-maplestory`）+「以 Cyder 開啟」
-
-[Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) **不能**跑新楓之谷。啟動後按鈕會暫時停用約 10 秒並顯示狀態。
-
-一般模式使用精簡的固定大小視窗，QR 畫面只保留 QR Code、掃描說明、剩餘時間與重新產生按鈕。QR 區域以一致的 `12pt` 四邊白色留白延伸至視窗上、左、右邊緣。視窗不可縮放或進入全螢幕；系統選單不顯示「編輯」、「顯示方式」、「遊戲」與「視窗」，保持最純粹乾淨的介面。Legacy 版本則支援動態內容高度貼合 (`Content Auto-Fit`)，於切換頁面時會平滑自動調整視窗高度，避免下方多餘留白。
-
-另支援**楓之谷：經典版**（教學稱新楓之谷：經典版）：無 QR。選擇 `Maplestory_Classic.exe` 後開啟官方登入網頁；網頁透過 `NexonPlug://` 回傳參數，App 以 `open -n -b local.cyder.app … --args` 優先指定 [Cyder 正式版](https://github.com/dspp779/CyderBits/releases/latest) 啟動（未安裝時會提示，通常不必改 Finder「打開方式」）。可在頁面直接將 `NexonPlug` 設為由 Beanfun OTP 處理（位在說明文案正下方）；其他非經典版 gameCode 會自動轉發官方 NexonPlug.app。測完可改回 `com.nexon.plug`。Beanfun OTP 僅允許單一實例；若由網頁 `NexonPlug://` 冷啟動並成功開啟經典版，啟動完成後會自動結束。完整步驟見 [`docs/macos-player-guide-classic.md`](docs/macos-player-guide-classic.md)。App 內「下載經典版客戶端」使用釘選版 [nxdl](https://github.com/HikariCalyx/nxdl)；整合細節（路徑還原、PTY／TUI 進度）見 [`docs/nxdl-classic-download.md`](docs/nxdl-classic-download.md)。
-
-## 進階模式
-
-從 macOS 上方的「模式」選單切換至進階模式，可查看及操作 OTP、立即／自動更新、目前狀態、Debug Log、完整可貼上終端機的啟動指令與手動啟動功能。
-
-「遊戲啟動指令」區塊會顯示**完整** shell 指令（不是只有 `--args` 後的遊戲參數），可直接複製到「終端機」執行。新楓之谷可在 `open` 與 **Nexon MapleStory Launcher Wine** 兩種形式間切換；其他遊戲僅顯示 `open` 形式。
-
-`open` 形式會呼叫 macOS 的 `open -n`，依 `.exe` 的預設開啟 App 建立新的 Cyder instance（路徑即使包含空白也會正確引號）。支援帶入登入參數的遊戲如下：
-
-```sh
-open -n '/path/to/MapleStory.exe' --args tw.login.maplestory.beanfun.com 8484 BeanFun <ServiceAccountID> <OTP>
-open -n '/path/to/mabinogi.exe' --args /N:<ServiceAccountID> /V:<OTP> /T:gamania
-open -n '/path/to/elsword.exe' --args <ServiceAccountID> <OTP> TW
-```
-
-Wine 形式（僅新楓之谷）對齊 [`docs/macos-player-guide.md`](docs/macos-player-guide.md)：`maplestory` bottle、`--wait-children`、`--enable-alt-loader macdrv`、`zh_TW.UTF-8` locale，以及 MapleStory Launcher SharedSupport 的 Wine 路徑。macOS 完整安裝與手動啟動流程亦見該文件；經典版見 [`docs/macos-player-guide-classic.md`](docs/macos-player-guide-classic.md)。
-
-**實際按下「透過 Cyder 啟動遊戲」仍走 Cyder 的 `open -n`**，不會從 App 內直接呼叫 Wine。
-
-Debug Log 會印出呼叫網址、表單參數、HTTP 狀態、Cookie、Token、SecretCode、LongPolling key、帳號資料及 OTP。依目前的 debug 設定，敏感內容預設不遮蔽；這些資料等同登入憑證，請勿公開分享。
-
-關閉最後一個視窗會直接結束 App。
-
-## 建置與測試
-
-建置機需要 Apple Command Line Tools；使用者執行已建好的 `.app` 不需要安裝其他東西。
+## 快速建置與測試
 
 ```sh
 cd BeanfunOTP
-./test.sh
-./build.sh          # Modern (--release 可執行 Developer ID 簽署與 Apple Notarization 公證)
-./build-legacy.sh   # Legacy
+
+./test.sh          # 執行單元測試
+./build.sh         # 建置 Modern 版 (dist/Beanfun OTP.app)
+./build-legacy.sh  # 建置 Legacy 版 (dist/Beanfun OTP Legacy.app)
 ```
 
-Modern 版輸出位於 `dist/Beanfun OTP.app`，支援 Apple Silicon、Intel Mac 與 macOS 13 以上。Legacy 版輸出位於 `dist/Beanfun OTP Legacy.app`，僅支援 Intel Mac 與 macOS 10.12 以上。
-
-這是非官方工具。Beanfun 若修改登入頁面、欄位或 OTP 協定，解析流程可能需要同步調整。
+> **免責聲明**：本專案為非官方社群工具。遊戲服務與登入協定隨時可能變更。敏感登入憑證請勿公開分享。

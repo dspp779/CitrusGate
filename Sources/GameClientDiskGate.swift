@@ -31,6 +31,56 @@ enum ClientCheckJSONParser {
     }
 }
 
+struct ManifestInfo: Equatable {
+    let totalBytes: UInt64
+    let filePaths: [String]
+}
+
+enum IncrementalSizeCalculator {
+    /// Compares manifest relative file paths with local files in `destination`.
+    /// Returns the estimated remaining bytes needed to be downloaded.
+    /// If all manifest files exist and their total size >= `totalManifestBytes`, returns 0.
+    static func calculateRequiredDownloadBytes(
+        manifestFiles: [String],
+        totalManifestBytes: UInt64,
+        destination: URL
+    ) -> UInt64 {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: destination.path) else {
+            return totalManifestBytes
+        }
+
+        if manifestFiles.isEmpty {
+            return totalManifestBytes
+        }
+
+        var existingCount = 0
+        var existingBytes: UInt64 = 0
+
+        for relPath in manifestFiles {
+            let normPath = relPath.replacingOccurrences(of: "\\", with: "/")
+            let itemURL = destination.appendingPathComponent(normPath)
+            if fm.fileExists(atPath: itemURL.path) {
+                existingCount += 1
+                if let attrs = try? fm.attributesOfItem(atPath: itemURL.path),
+                   let size = attrs[.size] as? NSNumber {
+                    existingBytes += size.uint64Value
+                }
+            }
+        }
+
+        if existingCount == manifestFiles.count && (existingBytes + 1_000_000 >= totalManifestBytes) {
+            return 0
+        }
+
+        if existingBytes >= totalManifestBytes {
+            return 0
+        }
+
+        return totalManifestBytes - existingBytes
+    }
+}
+
 enum DiskSpaceVerdict: Equatable {
     case ok
     case warn

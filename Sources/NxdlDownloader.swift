@@ -12,6 +12,7 @@ struct GameClientToolConfig: Equatable {
     let primaryExecutableName: String
 
     var checkArguments: [String] { [gameAlias, "--check", "--json"] }
+    var verboseCheckArguments: [String] { [gameAlias, "--check", "-v"] }
 
     func downloadArguments(destinationPath: String) -> [String] {
         if self == .cmsdlMapleStory {
@@ -81,15 +82,23 @@ struct NxdlOSC94Progress: Equatable {
 struct NxdlDownloadProgressState: Equatable {
     var statusMessage: String = ""
     var overall: NxdlProgressBarInfo?
-    /// File names of the TUI per-file bars in the latest render frame
-    /// (display basenames). The downloader fetches several files in parallel,
-    /// so this usually holds more than one entry.
     var currentFileNames: [String] = []
+    var destinationURL: URL? = nil
 
     var currentFileName: String? { currentFileNames.first }
 
     var currentFileNamesText: String? {
         currentFileNames.isEmpty ? nil : currentFileNames.joined(separator: ", ")
+    }
+
+    var isCheckingIntegrity: Bool {
+        if let speed = overall?.speedText, speed.contains("GB/s") || speed.contains("GiB/s") {
+            return true
+        }
+        guard let dest = destinationURL, let fn = currentFileName else { return false }
+        let normPath = fn.replacingOccurrences(of: "\\", with: "/")
+        let fileURL = dest.appendingPathComponent(normPath)
+        return FileManager.default.fileExists(atPath: fileURL.path)
     }
 }
 
@@ -790,6 +799,24 @@ final class NxdlDownloader {
         }
     }
 
+    /// Ensures the tool binary, then runs `--check -v` over a pipe
+    /// and returns parsed `ManifestInfo`.
+    func probeManifestInfo(
+        config: GameClientToolConfig,
+        onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
+        completion: @escaping (Result<ManifestInfo, Error>) -> Void
+    ) {
+        ensureBinary(config: config, onUpdate: onUpdate) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case let .failure(error):
+                completion(.failure(error))
+            case let .success(binary):
+                self.runVerboseCheck(config: config, binary: binary, onUpdate: onUpdate, completion: completion)
+            }
+        }
+    }
+
     @available(macOS 10.15, *)
     func downloadClassicClient(
         to destination: URL,
@@ -826,6 +853,18 @@ final class NxdlDownloader {
     ) async throws -> UInt64 {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<UInt64, Error>) in
             probeTotalSize(config: config, onUpdate: onUpdate) { result in
+                continuation.resume(with: result)
+            }
+        }
+    }
+
+    @available(macOS 10.15, *)
+    func probeManifestInfo(
+        config: GameClientToolConfig,
+        onUpdate: @escaping @Sendable (NxdlDownloadUpdate) -> Void
+    ) async throws -> ManifestInfo {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ManifestInfo, Error>) in
+            probeManifestInfo(config: config, onUpdate: onUpdate) { result in
                 continuation.resume(with: result)
             }
         }
@@ -1075,6 +1114,65 @@ final class NxdlDownloader {
         }
     }
 
+    private func runVerboseCheck(
+        config: GameClientToolConfig,
+        binary: URL,
+        onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
+        completion: @escaping (Result<ManifestInfo, Error>) -> Void
+    ) {
+        do {
+            try prepareBinaryForExecution(at: binary.path)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        onUpdate(.message("正在查詢客戶端檔案清單…"))
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        let process = Process()
+        process.launchPath = binary.path
+        process.currentDirectoryPath = supportDirectory(for: config).path
+        process.arguments = config.verboseCheckArguments
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        runningProcess = process
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            defer { self?.runningProcess = nil }
+
+            process.launch()
+
+            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+
+            if process.terminationReason == .uncaughtSignal {
+                completion(.failure(NxdlDownloaderError.cancelled))
+                return
+            }
+
+            let stdoutText = String(data: stdoutData, encoding: .utf8) ?? String(decoding: stdoutData, as: UTF8.self)
+            let stderrText = String(data: stderrData, encoding: .utf8) ?? String(decoding: stderrData, as: UTF8.self)
+
+            if process.terminationStatus != 0 {
+                let cleaned = NxdlProgressParser.stripANSI(stderrText.isEmpty ? stdoutText : stderrText)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let detail = cleaned.isEmpty ? "無法取得客戶端檔案清單" : "無法取得客戶端檔案清單：\(cleaned)"
+                completion(.failure(NxdlDownloaderError.processFailed(process.terminationStatus, detail)))
+                return
+            }
+
+            let fullOutput = stdoutText + "\n" + stderrText
+            let totalBytes = NxdlManifestParser.extractTotalBytes(from: fullOutput) ?? 0
+            let filePaths = NxdlManifestParser.parseFilePaths(from: fullOutput, config: config)
+
+            completion(.success(ManifestInfo(totalBytes: totalBytes, filePaths: filePaths)))
+        }
+    }
+
     /// Prefer a whole JSON object line; fall back to first `{`…last `}` span.
     private static func extractJSONObjectText(from raw: String) -> String? {
         let cleaned = NxdlProgressParser.stripANSI(raw)
@@ -1308,5 +1406,70 @@ final class NxdlDownloader {
             )
         }
         log("已解除 quarantine：\(path)")
+    }
+}
+
+enum NxdlManifestParser {
+    static func extractTotalBytes(from text: String) -> UInt64? {
+        let cleaned = NxdlProgressParser.stripANSI(text)
+        guard let regex = try? NSRegularExpression(pattern: #"\(([\d,]+)\s*bytes\)"#, options: [.caseInsensitive]) else {
+            return nil
+        }
+        let nsText = cleaned as NSString
+        let matches = regex.matches(in: cleaned, options: [], range: NSRange(location: 0, length: nsText.length))
+        guard let lastMatch = matches.last, lastMatch.numberOfRanges > 1 else {
+            return nil
+        }
+        let digitsStr = nsText.substring(with: lastMatch.range(at: 1)).replacingOccurrences(of: ",", with: "")
+        return UInt64(digitsStr)
+    }
+
+    static func parseFilePaths(from text: String, config: GameClientToolConfig) -> [String] {
+        let cleaned = NxdlProgressParser.stripANSI(text)
+        let lines = cleaned.components(separatedBy: .newlines)
+        var filePaths: [String] = []
+
+        if config == .cmsdlMapleStory {
+            var inFilesSection = false
+            for line in lines {
+                if line.contains("file(s):") {
+                    inFilesSection = true
+                    continue
+                }
+                if inFilesSection {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if line.hasPrefix("  ") && !trimmed.isEmpty {
+                        filePaths.append(trimmed)
+                    } else if !line.hasPrefix(" ") && !trimmed.isEmpty {
+                        inFilesSection = false
+                    }
+                }
+            }
+        } else {
+            var inTable = false
+            for line in lines {
+                if line.hasPrefix("PATH") && line.contains("SIZE") {
+                    inTable = true
+                    continue
+                }
+                if inTable && line.hasPrefix("----") {
+                    continue
+                }
+                if inTable {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if trimmed.isEmpty { continue }
+                    let lineStr = line as NSString
+                    if let regex = try? NSRegularExpression(pattern: #"^\s*(\S.*?)\s{2,}"#, options: []),
+                       let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: lineStr.length)),
+                       match.numberOfRanges > 1 {
+                        let path = lineStr.substring(with: match.range(at: 1))
+                        if path != "PATH" {
+                            filePaths.append(path)
+                        }
+                    }
+                }
+            }
+        }
+        return filePaths
     }
 }

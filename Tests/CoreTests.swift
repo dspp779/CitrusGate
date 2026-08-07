@@ -31,9 +31,11 @@ enum CoreTests {
         try testNxdlFailureMessage()
         try testDiskSpaceGate()
         try testClientCheckJSONParser()
+        try testIncrementalSizeCalculator()
+        try testNxdlManifestParser()
         try testSessionExpiredDetection()
         try testClassicUpdateStatusEnum()
-        print("CoreTests: 30 tests passed")
+        print("CoreTests: 32 tests passed")
     }
 
 
@@ -732,6 +734,72 @@ enum CoreTests {
         } catch {
             throw TestFailure(message: "unexpected error \(error)")
         }
+    }
+
+    private static func testIncrementalSizeCalculator() throws {
+        let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file1 = tmpDir.appendingPathComponent("file1.txt")
+        let subDir = tmpDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        let file2 = subDir.appendingPathComponent("file2.txt")
+
+        try Data("hello world".utf8).write(to: file1)
+        try Data("12345".utf8).write(to: file2)
+
+        let manifest = ["file1.txt", "sub\\file2.txt"]
+        let totalManifestBytes: UInt64 = 16
+
+        let required = IncrementalSizeCalculator.calculateRequiredDownloadBytes(
+            manifestFiles: manifest,
+            totalManifestBytes: totalManifestBytes,
+            destination: tmpDir
+        )
+        try expect(required == 0, "all files exist -> 0 required bytes")
+
+        let missingManifest = ["file1.txt", "sub\\file2.txt", "missing.txt"]
+        let reqMissing = IncrementalSizeCalculator.calculateRequiredDownloadBytes(
+            manifestFiles: missingManifest,
+            totalManifestBytes: 100,
+            destination: tmpDir
+        )
+        try expect(reqMissing == 84, "missing file -> 100 - 16 = 84 required bytes")
+    }
+
+    private static func testNxdlManifestParser() throws {
+        let sampleCmsdl = """
+        cmsdl 0.2.5: checking for updates from region 'TMS'.
+          product:    新楓之谷
+          version:    V281
+          files:      2
+          total size: 66.19 GB (71,075,714,473 bytes)
+
+        2 file(s):
+          BlackCipher/BlackCall64.aes
+          Data/Base/Base.wz
+        """
+        let cmsdlBytes = NxdlManifestParser.extractTotalBytes(from: sampleCmsdl)
+        try expect(cmsdlBytes == 71_075_714_473, "parsed cmsdl total bytes")
+
+        let cmsdlPaths = NxdlManifestParser.parseFilePaths(from: sampleCmsdl, config: .cmsdlMapleStory)
+        try expect(cmsdlPaths == ["BlackCipher/BlackCall64.aes", "Data/Base/Base.wz"], "parsed cmsdl file paths")
+
+        let sampleNxdl = """
+        nxdl v0.1.2-prerelease2
+          total size:          2.84 GiB (3,047,501,776 bytes)
+
+        PATH                                                                     CHUNKS         SIZE
+        ---------------------------------------------------------------------- -------- ------------
+        D3D12\\D3D12Core.dll                                                           2      4.5 MiB
+        GameAssembly.dll                                                             30    116.6 MiB
+        """
+        let nxdlBytes = NxdlManifestParser.extractTotalBytes(from: sampleNxdl)
+        try expect(nxdlBytes == 3_047_501_776, "parsed nxdl total bytes")
+
+        let nxdlPaths = NxdlManifestParser.parseFilePaths(from: sampleNxdl, config: .nxdlClassic)
+        try expect(nxdlPaths == ["D3D12\\D3D12Core.dll", "GameAssembly.dll"], "parsed nxdl file paths")
     }
 
     private static func testSessionExpiredDetection() throws {

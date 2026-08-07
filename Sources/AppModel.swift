@@ -844,6 +844,16 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func presentUpToDateAlert() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "已是最新版本"
+        alert.informativeText = "經快速檢查，本機檔案完整且檔案大小一致。\n目前不需要下載額外檔案。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "確定")
+        alert.addButton(withTitle: "嘗試深度更新")
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
     private func startGameClientDownload(
         targetGame: GameDefinition,
         config: GameClientToolConfig,
@@ -851,7 +861,8 @@ final class AppModel: ObservableObject {
         progressTitle: String,
         statusWhileDownloading: String,
         missingExecutableHint: String,
-        logLabel: String
+        logLabel: String,
+        isDeepUpdate: Bool = false
     ) {
         classicDownloadTask?.cancel()
         classicDownloadTask = Task { [weak self] in
@@ -859,13 +870,13 @@ final class AppModel: ObservableObject {
             self.gameClientDownloadTitle = progressTitle
             self.isDownloadingGameClient = true
             self.isBusy = true
-            self.statusMessage = "正在檢查下載大小…"
-            self.classicDownloadStatus = "正在檢查下載大小…"
-            self.classicDownloadProgress = NxdlDownloadProgressState(statusMessage: "正在檢查下載大小…")
+            self.statusMessage = isDeepUpdate ? "正在準備深度更新…" : "正在檢查下載大小…"
+            self.classicDownloadStatus = self.statusMessage
+            self.classicDownloadProgress = NxdlDownloadProgressState(statusMessage: self.statusMessage)
             // Progress sheet opens only after the disk gate passes.
 
             do {
-                let total = try await self.nxdlDownloader.probeTotalSize(config: config) { update in
+                let manifestInfo = try await self.nxdlDownloader.probeManifestInfo(config: config) { update in
                     Task { @MainActor in
                         if case let .message(message) = update {
                             self.statusMessage = message
@@ -873,8 +884,47 @@ final class AppModel: ObservableObject {
                         }
                     }
                 }
+                let total = manifestInfo.totalBytes > 0
+                    ? manifestInfo.totalBytes
+                    : (try await self.nxdlDownloader.probeTotalSize(config: config) { _ in })
                 let free = try VolumeFreeSpace.freeBytes(forDirectory: destination)
-                let evaluation = DiskSpaceGate.evaluate(totalBytes: total, freeBytes: free)
+
+                var bytesToCheck = total
+                if !isDeepUpdate {
+                    bytesToCheck = IncrementalSizeCalculator.calculateRequiredDownloadBytes(
+                        manifestFiles: manifestInfo.filePaths,
+                        totalManifestBytes: total,
+                        destination: destination
+                    )
+                }
+
+                if !isDeepUpdate && bytesToCheck == 0 {
+                    self.statusMessage = "本機檔案完整且大小一致，已是最新版本"
+                    self.isDownloadingGameClient = false
+                    self.isBusy = false
+                    self.classicDownloadStatus = ""
+                    self.classicDownloadProgress = NxdlDownloadProgressState()
+                    self.gameClientDownloadTitle = ""
+                    if targetGame.id == GameDefinition.mapleStoryClassic.id {
+                        self.classicUpdateStatus = .upToDate
+                    }
+                    if self.presentUpToDateAlert() {
+                        self.startGameClientDownload(
+                            targetGame: targetGame,
+                            config: config,
+                            destination: destination,
+                            progressTitle: progressTitle,
+                            statusWhileDownloading: statusWhileDownloading,
+                            missingExecutableHint: missingExecutableHint,
+                            logLabel: logLabel,
+                            isDeepUpdate: true
+                        )
+                    }
+                    return
+                }
+
+                let diskGateTotal = isDeepUpdate ? min(total, 5 * DiskSpaceGate.gibibyte) : bytesToCheck
+                let evaluation = DiskSpaceGate.evaluate(totalBytes: diskGateTotal, freeBytes: free)
                 guard self.presentDiskGate(evaluation: evaluation) else {
                     self.statusMessage = "已取消下載"
                     self.isDownloadingGameClient = false

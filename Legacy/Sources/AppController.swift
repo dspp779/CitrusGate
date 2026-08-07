@@ -685,6 +685,16 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         }
     }
 
+    private func presentUpToDateAlert() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "已是最新版本"
+        alert.informativeText = "經快速檢查，本機檔案完整且檔案大小一致。\n目前不需要下載額外檔案。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "確定")
+        alert.addButton(withTitle: "嘗試深度更新")
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
     private func beginGameClientDownload(
         targetGame: GameDefinition,
         config: GameClientToolConfig,
@@ -692,14 +702,41 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         progressTitle: String,
         statusWhileDownloading: String,
         missingExecutableHint: String,
-        logLabel: String
+        logLabel: String,
+        isDeepUpdate: Bool = false
     ) {
         isDownloadingGameClient = true
-        classicDownloadStatus = "正在檢查下載大小…"
-        statusLabel.stringValue = "正在檢查下載大小…"
+        classicDownloadStatus = isDeepUpdate ? "正在準備深度更新…" : "正在檢查下載大小…"
+        statusLabel.stringValue = classicDownloadStatus
         updateButtons()
 
-        nxdlDownloader.probeTotalSize(config: config, onUpdate: { [weak self] update in
+        if isDeepUpdate {
+            do {
+                let free = try VolumeFreeSpace.freeBytes(forDirectory: destination)
+                let evaluation = DiskSpaceGate.evaluate(totalBytes: 5 * DiskSpaceGate.gibibyte, freeBytes: free)
+                guard self.presentDiskGate(evaluation: evaluation) else {
+                    self.statusLabel.stringValue = "已取消下載"
+                    self.finishGameClientDownload()
+                    return
+                }
+                self.startGameClientDownload(
+                    targetGame: targetGame,
+                    config: config,
+                    to: destination,
+                    progressTitle: progressTitle,
+                    statusWhileDownloading: statusWhileDownloading,
+                    missingExecutableHint: missingExecutableHint,
+                    logLabel: logLabel
+                )
+            } catch {
+                self.showError(error)
+                self.statusLabel.stringValue = "下載失敗"
+                self.finishGameClientDownload()
+            }
+            return
+        }
+
+        nxdlDownloader.probeManifestInfo(config: config, onUpdate: { [weak self] update in
             DispatchQueue.main.async {
                 if case let .message(message) = update {
                     self?.statusLabel.stringValue = message
@@ -718,10 +755,33 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                         self.statusLabel.stringValue = "下載失敗"
                     }
                     self.finishGameClientDownload()
-                case let .success(total):
+                case let .success(info):
                     do {
+                        let total = info.totalBytes
                         let free = try VolumeFreeSpace.freeBytes(forDirectory: destination)
-                        let evaluation = DiskSpaceGate.evaluate(totalBytes: total, freeBytes: free)
+                        let required = IncrementalSizeCalculator.calculateRequiredDownloadBytes(
+                            manifestFiles: info.filePaths,
+                            totalManifestBytes: total,
+                            destination: destination
+                        )
+                        if required == 0 {
+                            self.statusLabel.stringValue = "本機檔案完整且大小一致，已是最新版本"
+                            self.finishGameClientDownload()
+                            if self.presentUpToDateAlert() {
+                                self.beginGameClientDownload(
+                                    targetGame: targetGame,
+                                    config: config,
+                                    destination: destination,
+                                    progressTitle: progressTitle,
+                                    statusWhileDownloading: statusWhileDownloading,
+                                    missingExecutableHint: missingExecutableHint,
+                                    logLabel: logLabel,
+                                    isDeepUpdate: true
+                                )
+                            }
+                            return
+                        }
+                        let evaluation = DiskSpaceGate.evaluate(totalBytes: required, freeBytes: free)
                         guard self.presentDiskGate(evaluation: evaluation) else {
                             self.statusLabel.stringValue = "已取消下載"
                             self.finishGameClientDownload()

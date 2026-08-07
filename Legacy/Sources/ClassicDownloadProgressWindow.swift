@@ -56,7 +56,9 @@ final class ClassicDownloadProgressWindowController: NSWindowController {
             currentFileLabel.stringValue = ""
         case let .progress(state):
             if let fileNames = state.currentFileNamesText {
-                currentFileLabel.stringValue = "正在下載 \(fileNames)"
+                let actionText = state.isCheckingIntegrity ? "正在檢查" : "正在下載"
+                let suffixText = state.isCheckingIntegrity ? " 檔案完整性…" : ""
+                currentFileLabel.stringValue = "\(actionText) \(fileNames)\(suffixText)"
             } else if !state.statusMessage.isEmpty {
                 statusLabel.stringValue = state.statusMessage
                 currentFileLabel.stringValue = ""
@@ -65,12 +67,13 @@ final class ClassicDownloadProgressWindowController: NSWindowController {
                 overallProgress.isIndeterminate = false
                 overallProgress.stopAnimation(nil)
                 overallProgress.doubleValue = overall.fraction * 100
-                overallDetailLabel.stringValue = "\(overall.downloadedText) / \(overall.totalText)  ·  \(overall.speedText)"
+                let speedText = state.isCheckingIntegrity ? "檢查完整性中" : overall.speedText
+                overallDetailLabel.stringValue = "\(overall.downloadedText) / \(overall.totalText)  ·  \(speedText)"
                 var metaParts: [String] = []
                 if let elapsed = overall.elapsedText {
                     metaParts.append("已用時間 \(elapsed)")
                 }
-                if let remaining = overall.remainingTimeText {
+                if !state.isCheckingIntegrity, let remaining = overall.remainingTimeText {
                     metaParts.append("預估剩餘時間 \(remaining)")
                 }
                 metaLabel.stringValue = metaParts.joined(separator: "  ·  ")

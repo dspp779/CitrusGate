@@ -16,15 +16,21 @@ struct ClassicDownloadProgressView: View {
                         Text("\(overall.downloadedText) / \(overall.totalText)")
                             .font(.callout.monospacedDigit())
                         Spacer()
-                        Text(overall.speedText)
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                        if model.classicDownloadProgress.isCheckingIntegrity {
+                            Text("檢查完整性中")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(overall.speedText)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     HStack(spacing: 12) {
                         if let elapsed = overall.elapsedText {
                             Text("已用時間 \(elapsed)")
                         }
-                        if let remaining = overall.remainingTimeText {
+                        if !model.classicDownloadProgress.isCheckingIntegrity, let remaining = overall.remainingTimeText {
                             Text("預估剩餘時間 \(remaining)")
                         }
                     }
@@ -41,7 +47,9 @@ struct ClassicDownloadProgressView: View {
             }
 
             if let fileNames = model.classicDownloadProgress.currentFileNamesText {
-                Text("正在下載 \(fileNames)")
+                let actionText = model.classicDownloadProgress.isCheckingIntegrity ? "正在檢查" : "正在下載"
+                let suffixText = model.classicDownloadProgress.isCheckingIntegrity ? " 檔案完整性…" : ""
+                Text("\(actionText) \(fileNames)\(suffixText)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)

@@ -1205,10 +1205,24 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     // MARK: - NexonPlug Scheme Handling
 
+    private static let duplicateURLWindow: TimeInterval = 1.0
+    private var lastHandledURLString: String?
+    private var lastHandledURLDate: Date?
+
     func handleOpenedURL(_ url: URL, fromColdStart: Bool = false) {
         if fromColdStart {
             quitAfterSuccessfulClassicLaunch = true
         }
+        let urlString = url.absoluteString
+        let now = Date()
+        if urlString == lastHandledURLString,
+           let lastDate = lastHandledURLDate,
+           now.timeIntervalSince(lastDate) < Self.duplicateURLWindow {
+            return
+        }
+        lastHandledURLString = urlString
+        lastHandledURLDate = now
+
         guard let parsed = NexonPlugURLParser.parse(url) else { return }
 
         if NexonPlugURLParser.isMapleStoryClassic(gameCode: parsed.gameCode) {

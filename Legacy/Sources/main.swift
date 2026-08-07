@@ -3,7 +3,9 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var window: NSWindow?
     private var controller: AppController?
-    private var isColdStart = true
+    private var pendingURLs: [URL] = []
+    private(set) var isWithinColdStartURLWindow = true
+    private var didScheduleColdStartWindowEnd = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(
@@ -31,7 +33,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         self.window = window
         NSApp.activate(ignoringOtherApps: true)
-        isColdStart = false
+        flushPendingURLs()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard !didScheduleColdStartWindowEnd else { return }
+        didScheduleColdStartWindowEnd = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
+            self?.isWithinColdStartURLWindow = false
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -41,12 +51,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
         guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: urlString) else { return }
-        controller?.handleOpenedURL(url, fromColdStart: isColdStart)
+        processOpenedURL(url)
     }
 
     func application(_ sender: NSApplication, open urls: [URL]) {
         for url in urls {
-            controller?.handleOpenedURL(url, fromColdStart: isColdStart)
+            processOpenedURL(url)
+        }
+    }
+
+    private func processOpenedURL(_ url: URL) {
+        if let controller = controller {
+            controller.handleOpenedURL(url, fromColdStart: isWithinColdStartURLWindow)
+        } else {
+            pendingURLs.append(url)
+        }
+    }
+
+    private func flushPendingURLs() {
+        guard let controller = controller, !pendingURLs.isEmpty else { return }
+        let urls = pendingURLs
+        pendingURLs = []
+        for url in urls {
+            controller.handleOpenedURL(url, fromColdStart: isWithinColdStartURLWindow)
         }
     }
 }

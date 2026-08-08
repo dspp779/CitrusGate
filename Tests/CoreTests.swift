@@ -23,6 +23,7 @@ enum CoreTests {
         try testQuarantineRemovalErrorDescription()
         try testNxdlProgressParser()
         try testNxdlVerifiedFileNameParser()
+        try testIsCheckingIntegrityIgnoresFileExistence()
         try testNxdlOutputStreamParser()
         try testOpenLauncherArguments()
         try testWindowsPathFilenameNormalizer()
@@ -37,7 +38,7 @@ enum CoreTests {
         try testSessionExpiredDetection()
         try testClassicUpdateStatusEnum()
         try testClientUpdateUIHelpers()
-        print("CoreTests: 34 tests passed")
+        print("CoreTests: 35 tests passed")
     }
 
 
@@ -494,6 +495,50 @@ enum CoreTests {
                 || tracker.state.currentFileNamesText?.contains("Base.wz") == true,
             "verified line publishes file name"
         )
+    }
+
+    /// Regression for the false-positive fixed alongside the check-update
+    /// button: `currentFileNames` stores display basenames, not paths
+    /// relative to `destinationURL`. A basename that happens to already
+    /// exist on disk under the destination (e.g. from a previous partial
+    /// download) must not, by itself, be treated as an integrity check —
+    /// only the speed heuristic or an explicit verified-file note may do so.
+    private static func testIsCheckingIntegrityIgnoresFileExistence() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("beanfunotp-integrity-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let currentFileName = "Base.wz"
+        try Data("stale".utf8).write(to: root.appendingPathComponent(currentFileName))
+
+        let tracker = NxdlProgressTracker()
+        tracker.setDestinationURL(root)
+        _ = NxdlProgressParser.ingestLine(
+            "⠙ [00:00:01] [===>----] 1.0 GiB/10.0 GiB (65.06 MiB/s, ETA 4s)",
+            into: tracker
+        )
+        _ = NxdlProgressParser.ingestLine(
+            "  [==>-------] 84.00 MiB/586.71 MiB ( 6.88 MiB/s) Data\\\(currentFileName)",
+            into: tracker
+        )
+        try expect(tracker.state.currentFileName == currentFileName, "current file basename set")
+        try expect(
+            !tracker.state.isCheckingIntegrity,
+            "existing basename + normal MiB/s speed must not be checking"
+        )
+
+        tracker.noteVerifiedFile(currentFileName)
+        try expect(tracker.state.isCheckingIntegrity, "noteVerifiedFile marks checking")
+
+        let file = try require(
+            NxdlProgressParser.parseFileProgress(
+                "  [==>-------] 84.00 MiB/586.71 MiB ( 6.88 MiB/s) Data\\\(currentFileName)"
+            ),
+            "file progress"
+        )
+        tracker.upsert(file)
+        try expect(!tracker.state.isCheckingIntegrity, "real file progress clears checking flag")
     }
 
     private static func testNxdlOutputStreamParser() throws {

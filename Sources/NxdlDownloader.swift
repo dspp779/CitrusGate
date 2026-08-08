@@ -84,6 +84,10 @@ struct NxdlDownloadProgressState: Equatable {
     var overall: NxdlProgressBarInfo?
     var currentFileNames: [String] = []
     var destinationURL: URL? = nil
+    /// True while the displayed file names come from nxdl's "already present
+    /// and verified" lines rather than active per-file download progress.
+    /// Set by `noteVerifiedFile`, cleared by `upsert` (real download progress).
+    var isVerifyingExistingFiles: Bool = false
 
     var currentFileName: String? { currentFileNames.first }
 
@@ -91,14 +95,18 @@ struct NxdlDownloadProgressState: Equatable {
         currentFileNames.isEmpty ? nil : currentFileNames.joined(separator: ", ")
     }
 
+    /// `currentFileNames` stores display basenames (not paths relative to
+    /// `destinationURL`), so file existence cannot be used as a signal here —
+    /// it would false-positive on any file that already happens to share a
+    /// basename with a file under the destination. Rely only on the speed
+    /// heuristic (verification reads local disk far faster than a network
+    /// download) and the explicit verified-file flag.
     var isCheckingIntegrity: Bool {
+        if isVerifyingExistingFiles { return true }
         if let speed = overall?.speedText, speed.contains("GB/s") || speed.contains("GiB/s") {
             return true
         }
-        guard let dest = destinationURL, let fn = currentFileName else { return false }
-        let normPath = fn.replacingOccurrences(of: "\\", with: "/")
-        let fileURL = dest.appendingPathComponent(normPath)
-        return FileManager.default.fileExists(atPath: fileURL.path)
+        return false
     }
 }
 
@@ -519,6 +527,9 @@ final class NxdlProgressTracker {
     }
 
     func upsert(_ file: NxdlFileProgressInfo) {
+        // Real per-file download progress means we're no longer just
+        // reporting verified/skipped files.
+        state.isVerifyingExistingFiles = false
         guard !frameFileNames.contains(file.displayName) else { return }
         frameFileNames.append(file.displayName)
         // Publish while the frame is still growing; a shorter list waits for the
@@ -539,6 +550,7 @@ final class NxdlProgressTracker {
     /// Publishes a file name parsed from an "already present and verified" line
     /// so the UI can show which file is being integrity-checked.
     func noteVerifiedFile(_ displayName: String) {
+        state.isVerifyingExistingFiles = true
         if state.currentFileNames == [displayName] { return }
         state.currentFileNames = [displayName]
     }

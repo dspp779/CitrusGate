@@ -1028,9 +1028,6 @@ final class AppModel: ObservableObject {
                     }
                 }
 
-                if targetGame.id == GameDefinition.mapleStoryClassic.id {
-                    self.defaults.set(total, forKey: "ClassicManifestTotalSize.\(destination.path)")
-                }
                 self.classicUpdateStatus = .upToDate
 
                 if let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination) {

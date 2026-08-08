@@ -958,9 +958,7 @@ final class AppModel: ObservableObject {
                     self.classicDownloadStatus = ""
                     self.classicDownloadProgress = NxdlDownloadProgressState()
                     self.gameClientDownloadTitle = ""
-                    if targetGame.id == GameDefinition.mapleStoryClassic.id {
-                        self.classicUpdateStatus = .upToDate
-                    }
+                    self.classicUpdateStatus = .upToDate
                     let forceTitle = ClientUpdateUI.forceUpdateButtonTitle(gameID: targetGame.id)
                     if self.presentUpToDateAlert(forceButtonTitle: forceTitle) {
                         self.startGameClientDownload(
@@ -1010,8 +1008,8 @@ final class AppModel: ObservableObject {
 
                 if targetGame.id == GameDefinition.mapleStoryClassic.id {
                     self.defaults.set(total, forKey: "ClassicManifestTotalSize.\(destination.path)")
-                    self.classicUpdateStatus = .upToDate
                 }
+                self.classicUpdateStatus = .upToDate
 
                 if let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination) {
                     self.saveExecutablePath(exePath, for: targetGame)

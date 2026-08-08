@@ -174,15 +174,7 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             }
-            if !model.hasValidExecutable, model.selectedGame?.id == GameDefinition.mapleStory.id {
-                Button {
-                    model.downloadMapleStoryClient()
-                } label: {
-                    Label("下載新楓之谷", systemImage: "arrow.down.circle")
-                }
-                .buttonStyle(.bordered)
-                .disabled(model.isDownloadingGameClient || model.isBusy)
-            }
+            ClientUpdateActionsSection(model: model)
             ExecutablePickerSection(model: model)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -260,17 +252,7 @@ struct ContentView: View {
                 model.claimNexonPlugHandler()
             }
             .buttonStyle(.link)
-            if !model.hasValidExecutable {
-                VStack(spacing: 8) {
-                    Button {
-                        model.downloadClassicClient()
-                    } label: {
-                        Label("下載經典版", systemImage: "arrow.down.circle")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(model.isDownloadingGameClient || model.isBusy)
-                }
-            }
+            ClientUpdateActionsSection(model: model)
             Button {
                 model.openClassicLoginPage()
             } label: {
@@ -328,15 +310,7 @@ struct ContentView: View {
                     .controlSize(.large)
                     .disabled(model.isBusy)
                 }
-                if !model.hasValidExecutable, model.selectedGame?.id == GameDefinition.mapleStory.id {
-                    Button {
-                        model.downloadMapleStoryClient()
-                    } label: {
-                        Label("下載新楓之谷", systemImage: "arrow.down.circle")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(model.isDownloadingGameClient || model.isBusy)
-                }
+                ClientUpdateActionsSection(model: model)
                 ExecutablePickerSection(model: model)
             }
             .frame(maxWidth: .infinity, minHeight: 240)
@@ -755,6 +729,104 @@ struct ContentView: View {
         .padding(10)
         .background(Color.secondary.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct ClientUpdateActionsSection: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        if let game = model.selectedGame,
+           game.id == GameDefinition.mapleStory.id || game.id == GameDefinition.mapleStoryClassic.id {
+            if !model.hasValidExecutable {
+                downloadButton(for: game)
+            } else {
+                updateStatusControls(for: game)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func downloadButton(for game: GameDefinition) -> some View {
+        if game.id == GameDefinition.mapleStoryClassic.id {
+            Button {
+                model.downloadClassicClient()
+            } label: {
+                Label("下載經典版", systemImage: "arrow.down.circle")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isDownloadingGameClient || model.isBusy)
+        } else if game.id == GameDefinition.mapleStory.id {
+            Button {
+                model.downloadMapleStoryClient()
+            } label: {
+                Label("下載新楓之谷", systemImage: "arrow.down.circle")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isDownloadingGameClient || model.isBusy)
+        }
+    }
+
+    @ViewBuilder
+    private func updateStatusControls(for game: GameDefinition) -> some View {
+        let status = model.classicUpdateStatus
+        VStack(spacing: 8) {
+            if status == .checking {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("正在檢查更新…")
+                }
+                .foregroundStyle(.secondary)
+            }
+
+            if let caption = ClientUpdateUI.statusCaption(status) {
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            if ClientUpdateUI.showsCheckButton(status) {
+                Button {
+                    model.checkClientUpdate()
+                } label: {
+                    Label("檢查更新", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.isDownloadingGameClient || model.isBusy)
+            }
+
+            if ClientUpdateUI.showsPrimaryUpdateButton(status) {
+                Button {
+                    if game.id == GameDefinition.mapleStoryClassic.id {
+                        model.updateClassicClient()
+                    } else {
+                        model.updateMapleStoryClient()
+                    }
+                } label: {
+                    Label("更新", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.isDownloadingGameClient || model.isBusy)
+            }
+
+            if case .maintenanceOrError = status {
+                Button("再試一次") {
+                    model.checkClientUpdate()
+                }
+                .disabled(model.isDownloadingGameClient || model.isBusy)
+            }
+
+            if ClientUpdateUI.showsForceUpdateButton(status) {
+                Button {
+                    model.forceUpdateClient()
+                } label: {
+                    Text(ClientUpdateUI.forceUpdateButtonTitle(gameID: game.id))
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.isDownloadingGameClient || model.isBusy)
+            }
+        }
     }
 }
 

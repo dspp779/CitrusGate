@@ -734,13 +734,23 @@ final class AppModel: ObservableObject {
                     self.classicUpdateStatus = .none
                     return
                 }
-                let bytesNeeded = IncrementalSizeCalculator.calculateRequiredDownloadBytes(
-                    manifestFiles: manifestInfo.filePaths,
-                    totalManifestBytes: manifestInfo.totalBytes > 0
-                        ? manifestInfo.totalBytes
-                        : (try await self.nxdlDownloader.probeTotalSize(config: config) { _ in }),
-                    destination: destination
-                )
+                let totalManifestBytes = manifestInfo.totalBytes > 0
+                    ? manifestInfo.totalBytes
+                    : (try await self.nxdlDownloader.probeTotalSize(config: config) { _ in })
+                guard !Task.isCancelled else {
+                    self.classicUpdateStatus = .none
+                    return
+                }
+                // Walks every manifest file on disk; can be slow for large
+                // installs, so run it off the main actor to avoid freezing the UI.
+                let filePaths = manifestInfo.filePaths
+                let bytesNeeded = await Task.detached(priority: .userInitiated) {
+                    IncrementalSizeCalculator.calculateRequiredDownloadBytes(
+                        manifestFiles: filePaths,
+                        totalManifestBytes: totalManifestBytes,
+                        destination: destination
+                    )
+                }.value
                 guard !Task.isCancelled else {
                     self.classicUpdateStatus = .none
                     return
@@ -943,11 +953,16 @@ final class AppModel: ObservableObject {
 
                 var bytesToCheck = total
                 if !isDeepUpdate {
-                    bytesToCheck = IncrementalSizeCalculator.calculateRequiredDownloadBytes(
-                        manifestFiles: manifestInfo.filePaths,
-                        totalManifestBytes: total,
-                        destination: destination
-                    )
+                    // Walks every manifest file on disk; run off the main actor
+                    // to avoid freezing the UI for large installs.
+                    let filePaths = manifestInfo.filePaths
+                    bytesToCheck = await Task.detached(priority: .userInitiated) {
+                        IncrementalSizeCalculator.calculateRequiredDownloadBytes(
+                            manifestFiles: filePaths,
+                            totalManifestBytes: total,
+                            destination: destination
+                        )
+                    }.value
                 }
 
                 if !isDeepUpdate && bytesToCheck == 0 {

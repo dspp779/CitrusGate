@@ -22,6 +22,8 @@ enum CoreTests {
         try testQuarantineStatusWithAttribute()
         try testQuarantineRemovalErrorDescription()
         try testNxdlProgressParser()
+        try testNxdlVerifiedFileNameParser()
+        try testIsCheckingIntegrityIgnoresFileExistence()
         try testNxdlOutputStreamParser()
         try testOpenLauncherArguments()
         try testWindowsPathFilenameNormalizer()
@@ -35,7 +37,8 @@ enum CoreTests {
         try testNxdlManifestParser()
         try testSessionExpiredDetection()
         try testClassicUpdateStatusEnum()
-        print("CoreTests: 32 tests passed")
+        try testClientUpdateUIHelpers()
+        print("CoreTests: 35 tests passed")
     }
 
 
@@ -462,6 +465,82 @@ enum CoreTests {
         try expect(glued.totalText == "2.76 GiB", "glued overall keeps grand total")
     }
 
+    private static func testNxdlVerifiedFileNameParser() throws {
+        let name = try require(
+            NxdlProgressParser.parseVerifiedFileName(
+                "Data/Base/Base.wz already present and verified (skipping download)."
+            ),
+            "verified path"
+        )
+        try expect(name == "Data/Base/Base.wz", "verified basename path")
+
+        try expect(
+            NxdlProgressParser.parseVerifiedFileName("下載中：1 / 2") == nil,
+            "non-verified line"
+        )
+
+        let tracker = NxdlProgressTracker()
+        tracker.setDestinationURL(URL(fileURLWithPath: "/Games/MapleStory"))
+        _ = NxdlProgressParser.ingestLine(
+            "⠙ [00:00:01] [===>----] 1.0 GiB/10.0 GiB (2.5 GiB/s, ETA 4s)",
+            into: tracker
+        )
+        _ = NxdlProgressParser.ingestLine(
+            "Data/Base/Base.wz already present and verified (skipping download).",
+            into: tracker
+        )
+        try expect(tracker.state.isCheckingIntegrity, "GiB/s → checking")
+        try expect(
+            tracker.state.currentFileNamesText == "Base.wz"
+                || tracker.state.currentFileNamesText?.contains("Base.wz") == true,
+            "verified line publishes file name"
+        )
+    }
+
+    /// Regression for the false-positive fixed alongside the check-update
+    /// button: `currentFileNames` stores display basenames, not paths
+    /// relative to `destinationURL`. A basename that happens to already
+    /// exist on disk under the destination (e.g. from a previous partial
+    /// download) must not, by itself, be treated as an integrity check —
+    /// only the speed heuristic or an explicit verified-file note may do so.
+    private static func testIsCheckingIntegrityIgnoresFileExistence() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("beanfunotp-integrity-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let currentFileName = "Base.wz"
+        try Data("stale".utf8).write(to: root.appendingPathComponent(currentFileName))
+
+        let tracker = NxdlProgressTracker()
+        tracker.setDestinationURL(root)
+        _ = NxdlProgressParser.ingestLine(
+            "⠙ [00:00:01] [===>----] 1.0 GiB/10.0 GiB (65.06 MiB/s, ETA 4s)",
+            into: tracker
+        )
+        _ = NxdlProgressParser.ingestLine(
+            "  [==>-------] 84.00 MiB/586.71 MiB ( 6.88 MiB/s) Data\\\(currentFileName)",
+            into: tracker
+        )
+        try expect(tracker.state.currentFileName == currentFileName, "current file basename set")
+        try expect(
+            !tracker.state.isCheckingIntegrity,
+            "existing basename + normal MiB/s speed must not be checking"
+        )
+
+        tracker.noteVerifiedFile(currentFileName)
+        try expect(tracker.state.isCheckingIntegrity, "noteVerifiedFile marks checking")
+
+        let file = try require(
+            NxdlProgressParser.parseFileProgress(
+                "  [==>-------] 84.00 MiB/586.71 MiB ( 6.88 MiB/s) Data\\\(currentFileName)"
+            ),
+            "file progress"
+        )
+        tracker.upsert(file)
+        try expect(!tracker.state.isCheckingIntegrity, "real file progress clears checking flag")
+    }
+
     private static func testNxdlOutputStreamParser() throws {
         // A PTY emits CRLF; Swift stores "\r\n" as one Character, so splitting on
         // "\n" or "\r" alone would merge every rendered line into one segment.
@@ -815,6 +894,36 @@ enum CoreTests {
 
         let networkError = BeanfunError.network("連線逾時")
         try expect(!networkError.isSessionExpired, "network timeout is not session expiration")
+    }
+
+    private static func testClientUpdateUIHelpers() throws {
+        try expect(
+            ClientUpdateUI.forceUpdateButtonTitle(gameID: GameDefinition.mapleStory.id) == "嘗試更新",
+            "maple force title"
+        )
+        try expect(
+            ClientUpdateUI.forceUpdateButtonTitle(gameID: GameDefinition.mapleStoryClassic.id) == "完整下載",
+            "classic force title"
+        )
+        try expect(ClientUpdateUI.showsCheckButton(.none), "none → check")
+        try expect(!ClientUpdateUI.showsCheckButton(.upToDate), "upToDate → no check")
+        try expect(!ClientUpdateUI.showsCheckButton(.checking), "checking → no check")
+        try expect(!ClientUpdateUI.showsPrimaryUpdateButton(.checking), "checking → no primary")
+        try expect(!ClientUpdateUI.showsForceUpdateButton(.checking), "checking → no force")
+        try expect(ClientUpdateUI.showsForceUpdateButton(.upToDate), "upToDate → force")
+        try expect(ClientUpdateUI.showsForceUpdateButton(.maintenanceOrError("x")), "error → force")
+        try expect(!ClientUpdateUI.showsForceUpdateButton(.updateAvailable), "available → no force")
+        try expect(ClientUpdateUI.showsPrimaryUpdateButton(.updateAvailable), "available → update")
+        try expect(!ClientUpdateUI.showsPrimaryUpdateButton(.upToDate), "upToDate → no primary update")
+        try expect(ClientUpdateUI.statusCaption(.upToDate) == "已是最新版本", "upToDate caption")
+        try expect(ClientUpdateUI.statusCaption(.updateAvailable) == "發現可用更新", "available caption")
+        try expect(ClientUpdateUI.statusCaption(.checking) == nil, "checking has no caption")
+        try expect(ClientUpdateUI.statusCaption(.none) == nil, "none has no caption")
+        if let msg = ClientUpdateUI.statusCaption(.maintenanceOrError("無法檢查更新")) {
+            try expect(msg == "無法檢查更新", "error caption passthrough")
+        } else {
+            throw TestFailure(message: "expected error caption")
+        }
     }
 
     private static func testClassicUpdateStatusEnum() throws {

@@ -67,9 +67,6 @@ final class AppModel: ObservableObject {
         didSet {
             guard let selectedGame else { return }
             defaults.set(executablePath, forKey: executablePathKey(for: selectedGame))
-            if selectedGame.id == GameDefinition.mapleStoryClassic.id {
-                checkClassicClientUpdate()
-            }
         }
     }
     @Published var advancedLaunchCommandStyle: AdvancedLaunchCommandStyle {
@@ -187,13 +184,14 @@ final class AppModel: ObservableObject {
         loginTask?.cancel()
         otpTask?.cancel()
         otpCountdownTask?.cancel()
+        classicUpdateCheckTask?.cancel()
+        classicUpdateStatus = .none
         selectedGameID = game.id
         executablePath = defaults.string(forKey: executablePathKey(for: game)) ?? ""
         resetGameSession()
         if game.authFlow == .webNexonPlug {
             screen = .classic
             statusMessage = "已選擇\(game.name)。請選擇主程式並開啟登入網頁。"
-            checkClassicClientUpdate()
             // When a Classic NexonPlug URL is already driving this selection,
             // handleClassicNexonPlug() owns the picker; scheduling this delayed
             // picker too would show two pickers in a row.
@@ -430,6 +428,8 @@ final class AppModel: ObservableObject {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         executablePath = url.path
+        classicUpdateCheckTask?.cancel()
+        classicUpdateStatus = .none
         statusMessage = "已記住\(game.name)主程式位置"
     }
 
@@ -702,8 +702,14 @@ final class AppModel: ObservableObject {
         )
     }
 
-    func checkClassicClientUpdate() {
-        guard selectedGame?.id == GameDefinition.mapleStoryClassic.id else {
+    func checkClientUpdate() {
+        guard let game = selectedGame else {
+            classicUpdateStatus = .none
+            return
+        }
+        let isClassic = game.id == GameDefinition.mapleStoryClassic.id
+        let isMaple = game.id == GameDefinition.mapleStory.id
+        guard isClassic || isMaple else {
             classicUpdateStatus = .none
             return
         }
@@ -712,57 +718,105 @@ final class AppModel: ObservableObject {
             classicUpdateStatus = .none
             return
         }
+        guard !isDownloadingGameClient else { return }
 
         classicUpdateCheckTask?.cancel()
         classicUpdateStatus = .checking
 
+        let config: GameClientToolConfig = isClassic ? .nxdlClassic : .cmsdlMapleStory
+        let destination = URL(fileURLWithPath: path).deletingLastPathComponent()
+
         classicUpdateCheckTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let serverTotalSize = try await self.nxdlDownloader.probeTotalSize(config: .nxdlClassic) { _ in }
-                guard !Task.isCancelled else { return }
-
-                let exeURL = URL(fileURLWithPath: path)
-                let folderURL = exeURL.deletingLastPathComponent()
-                let localSize = self.calculateDirectorySize(at: folderURL)
-                let savedTotalKey = "ClassicManifestTotalSize.\(folderURL.path)"
-                let savedTotal = self.defaults.object(forKey: savedTotalKey) as? UInt64
-
-                if (savedTotal != nil && savedTotal == serverTotalSize) || localSize >= UInt64(Double(serverTotalSize) * 0.9) {
-                    self.classicUpdateStatus = .upToDate
-                } else {
-                    self.classicUpdateStatus = .updateAvailable
+                let manifestInfo = try await self.nxdlDownloader.probeManifestInfo(config: config) { _ in }
+                guard !Task.isCancelled else {
+                    self.classicUpdateStatus = .none
+                    return
                 }
+                let totalManifestBytes = manifestInfo.totalBytes > 0
+                    ? manifestInfo.totalBytes
+                    : (try await self.nxdlDownloader.probeTotalSize(config: config) { _ in })
+                guard !Task.isCancelled else {
+                    self.classicUpdateStatus = .none
+                    return
+                }
+                // Walks every manifest file on disk; can be slow for large
+                // installs, so run it off the main actor to avoid freezing the UI.
+                let filePaths = manifestInfo.filePaths
+                let bytesNeeded = await Task.detached(priority: .userInitiated) {
+                    IncrementalSizeCalculator.calculateRequiredDownloadBytes(
+                        manifestFiles: filePaths,
+                        totalManifestBytes: totalManifestBytes,
+                        destination: destination
+                    )
+                }.value
+                guard !Task.isCancelled else {
+                    self.classicUpdateStatus = .none
+                    return
+                }
+                self.classicUpdateStatus = bytesNeeded == 0 ? .upToDate : .updateAvailable
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    self.classicUpdateStatus = .none
+                    return
+                }
                 let errorMsg = error.localizedDescription
+                let message: String
                 if errorMsg.contains("failed to parse game-info response")
                     || errorMsg.contains("failed to lookup address information")
                     || errorMsg.contains("Dns Failed")
                     || errorMsg.contains("HTTP request failed")
                     || errorMsg.contains("ConnectFailed")
                     || errorMsg.contains("timed out") {
-                    self.classicUpdateStatus = .maintenanceOrError("無法檢查更新（可能是伺服器維修中）")
+                    message = "無法檢查更新（可能是伺服器維修中）"
                 } else {
-                    self.classicUpdateStatus = .maintenanceOrError("無法檢查更新：\(errorMsg)")
+                    message = "無法檢查更新：\(errorMsg)"
                 }
+                self.classicUpdateStatus = .maintenanceOrError(message)
             }
         }
     }
 
-    private func calculateDirectorySize(at url: URL) -> UInt64 {
-        guard let enumerator = FileManager.default.enumerator(
-            at: url,
-            includingPropertiesForKeys: [.fileSizeKey],
-            options: [.skipsHiddenFiles]
-        ) else { return 0 }
-        var total: UInt64 = 0
-        for case let fileURL as URL in enumerator {
-            if let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey]), let size = values.fileSize {
-                total += UInt64(size)
+    func forceUpdateClient() {
+        guard let game = selectedGame else { return }
+        if game.id == GameDefinition.mapleStoryClassic.id {
+            guard !isDownloadingGameClient else { return }
+            let path = normalizedExecutablePath
+            guard !path.isEmpty, isValidExecutablePath(path) else {
+                downloadClassicClient()
+                return
             }
+            let destination = URL(fileURLWithPath: path).deletingLastPathComponent()
+            startGameClientDownload(
+                targetGame: GameDefinition.mapleStoryClassic,
+                config: .nxdlClassic,
+                destination: destination,
+                progressTitle: "完整下載新楓之谷：經典版",
+                statusWhileDownloading: "正在完整下載新楓之谷：經典版…",
+                missingExecutableHint: "下載完成，請手動選擇 Maplestory_Classic.exe",
+                logLabel: "經典版",
+                isDeepUpdate: true
+            )
+        } else if game.id == GameDefinition.mapleStory.id {
+            guard !isDownloadingGameClient else { return }
+            let path = normalizedExecutablePath
+            guard !path.isEmpty, isValidExecutablePath(path) else {
+                downloadMapleStoryClient()
+                return
+            }
+            let destination = URL(fileURLWithPath: path).deletingLastPathComponent()
+            startGameClientDownload(
+                targetGame: GameDefinition.mapleStory,
+                config: .cmsdlMapleStory,
+                destination: destination,
+                progressTitle: "更新新楓之谷",
+                statusWhileDownloading: "正在更新新楓之谷…",
+                missingExecutableHint: "更新完成，請手動選擇 MapleStory.exe",
+                logLabel: "新楓之谷",
+                isDeepUpdate: true
+            )
         }
-        return total
     }
 
     func downloadMapleStoryClient() {
@@ -844,13 +898,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func presentUpToDateAlert() -> Bool {
+    private func presentUpToDateAlert(forceButtonTitle: String) -> Bool {
         let alert = NSAlert()
         alert.messageText = "已是最新版本"
         alert.informativeText = "經快速檢查，本機檔案完整且檔案大小一致。\n目前不需要下載額外檔案。"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "確定")
-        alert.addButton(withTitle: "嘗試深度更新")
+        alert.addButton(withTitle: forceButtonTitle)
         return alert.runModal() == .alertSecondButtonReturn
     }
 
@@ -864,13 +918,21 @@ final class AppModel: ObservableObject {
         logLabel: String,
         isDeepUpdate: Bool = false
     ) {
+        classicUpdateCheckTask?.cancel()
+        classicUpdateStatus = .none
         classicDownloadTask?.cancel()
         classicDownloadTask = Task { [weak self] in
             guard let self else { return }
             self.gameClientDownloadTitle = progressTitle
             self.isDownloadingGameClient = true
             self.isBusy = true
-            self.statusMessage = isDeepUpdate ? "正在準備深度更新…" : "正在檢查下載大小…"
+            if isDeepUpdate {
+                self.statusMessage = targetGame.id == GameDefinition.mapleStoryClassic.id
+                    ? "正在準備完整下載…"
+                    : "正在準備更新…"
+            } else {
+                self.statusMessage = "正在檢查下載大小…"
+            }
             self.classicDownloadStatus = self.statusMessage
             self.classicDownloadProgress = NxdlDownloadProgressState(statusMessage: self.statusMessage)
             // Progress sheet opens only after the disk gate passes.
@@ -891,11 +953,16 @@ final class AppModel: ObservableObject {
 
                 var bytesToCheck = total
                 if !isDeepUpdate {
-                    bytesToCheck = IncrementalSizeCalculator.calculateRequiredDownloadBytes(
-                        manifestFiles: manifestInfo.filePaths,
-                        totalManifestBytes: total,
-                        destination: destination
-                    )
+                    // Walks every manifest file on disk; run off the main actor
+                    // to avoid freezing the UI for large installs.
+                    let filePaths = manifestInfo.filePaths
+                    bytesToCheck = await Task.detached(priority: .userInitiated) {
+                        IncrementalSizeCalculator.calculateRequiredDownloadBytes(
+                            manifestFiles: filePaths,
+                            totalManifestBytes: total,
+                            destination: destination
+                        )
+                    }.value
                 }
 
                 if !isDeepUpdate && bytesToCheck == 0 {
@@ -905,10 +972,9 @@ final class AppModel: ObservableObject {
                     self.classicDownloadStatus = ""
                     self.classicDownloadProgress = NxdlDownloadProgressState()
                     self.gameClientDownloadTitle = ""
-                    if targetGame.id == GameDefinition.mapleStoryClassic.id {
-                        self.classicUpdateStatus = .upToDate
-                    }
-                    if self.presentUpToDateAlert() {
+                    self.classicUpdateStatus = .upToDate
+                    let forceTitle = ClientUpdateUI.forceUpdateButtonTitle(gameID: targetGame.id)
+                    if self.presentUpToDateAlert(forceButtonTitle: forceTitle) {
                         self.startGameClientDownload(
                             targetGame: targetGame,
                             config: config,
@@ -923,7 +989,15 @@ final class AppModel: ObservableObject {
                     return
                 }
 
-                let diskGateTotal = isDeepUpdate ? min(total, 5 * DiskSpaceGate.gibibyte) : bytesToCheck
+                // Deep update re-downloads everything, so the gate must cover the
+                // full size — except cmsdlMapleStory, which purges WZ files as it
+                // goes and never holds more than ~5 GiB on disk at once.
+                let diskGateTotal: UInt64
+                if isDeepUpdate {
+                    diskGateTotal = config == .cmsdlMapleStory ? min(total, 5 * DiskSpaceGate.gibibyte) : total
+                } else {
+                    diskGateTotal = bytesToCheck
+                }
                 let evaluation = DiskSpaceGate.evaluate(totalBytes: diskGateTotal, freeBytes: free)
                 guard self.presentDiskGate(evaluation: evaluation) else {
                     self.statusMessage = "已取消下載"
@@ -954,10 +1028,7 @@ final class AppModel: ObservableObject {
                     }
                 }
 
-                if targetGame.id == GameDefinition.mapleStoryClassic.id {
-                    self.defaults.set(total, forKey: "ClassicManifestTotalSize.\(destination.path)")
-                    self.classicUpdateStatus = .upToDate
-                }
+                self.classicUpdateStatus = .upToDate
 
                 if let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination) {
                     self.saveExecutablePath(exePath, for: targetGame)

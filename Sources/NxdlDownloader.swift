@@ -84,6 +84,10 @@ struct NxdlDownloadProgressState: Equatable {
     var overall: NxdlProgressBarInfo?
     var currentFileNames: [String] = []
     var destinationURL: URL? = nil
+    /// True while the displayed file names come from nxdl's "already present
+    /// and verified" lines rather than active per-file download progress.
+    /// Set by `noteVerifiedFile`, cleared by `upsert` (real download progress).
+    var isVerifyingExistingFiles: Bool = false
 
     var currentFileName: String? { currentFileNames.first }
 
@@ -91,14 +95,18 @@ struct NxdlDownloadProgressState: Equatable {
         currentFileNames.isEmpty ? nil : currentFileNames.joined(separator: ", ")
     }
 
+    /// `currentFileNames` stores display basenames (not paths relative to
+    /// `destinationURL`), so file existence cannot be used as a signal here —
+    /// it would false-positive on any file that already happens to share a
+    /// basename with a file under the destination. Rely only on the speed
+    /// heuristic (verification reads local disk far faster than a network
+    /// download) and the explicit verified-file flag.
     var isCheckingIntegrity: Bool {
+        if isVerifyingExistingFiles { return true }
         if let speed = overall?.speedText, speed.contains("GB/s") || speed.contains("GiB/s") {
             return true
         }
-        guard let dest = destinationURL, let fn = currentFileName else { return false }
-        let normPath = fn.replacingOccurrences(of: "\\", with: "/")
-        let fileURL = dest.appendingPathComponent(normPath)
-        return FileManager.default.fileExists(atPath: fileURL.path)
+        return false
     }
 }
 
@@ -214,7 +222,22 @@ enum NxdlProgressParser {
             return .progress(tracker.state)
         }
 
+        if let path = parseVerifiedFileName(cleaned) {
+            tracker.noteVerifiedFile(displayName(for: path))
+            return .progress(tracker.state)
+        }
+
         return nil
+    }
+
+    /// Parses nxdl's "already verified" line, e.g.
+    /// `Data/Base/Base.wz already present and verified (skipping download).`,
+    /// returning the source-relative path so callers can derive a display name.
+    static func parseVerifiedFileName(_ cleaned: String) -> String? {
+        let marker = " already present and verified"
+        guard let range = cleaned.range(of: marker) else { return nil }
+        let path = String(cleaned[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+        return path.isEmpty ? nil : path
     }
 
     /// Parses nxdl's aggregate bar, e.g.
@@ -504,6 +527,9 @@ final class NxdlProgressTracker {
     }
 
     func upsert(_ file: NxdlFileProgressInfo) {
+        // Real per-file download progress means we're no longer just
+        // reporting verified/skipped files.
+        state.isVerifyingExistingFiles = false
         guard !frameFileNames.contains(file.displayName) else { return }
         frameFileNames.append(file.displayName)
         // Publish while the frame is still growing; a shorter list waits for the
@@ -515,6 +541,18 @@ final class NxdlProgressTracker {
 
     func setStatusMessage(_ message: String) {
         state.statusMessage = message
+    }
+
+    func setDestinationURL(_ url: URL?) {
+        state.destinationURL = url
+    }
+
+    /// Publishes a file name parsed from an "already present and verified" line
+    /// so the UI can show which file is being integrity-checked.
+    func noteVerifiedFile(_ displayName: String) {
+        state.isVerifyingExistingFiles = true
+        if state.currentFileNames == [displayName] { return }
+        state.currentFileNames = [displayName]
     }
 
     func messageUpdate(_ message: String) -> NxdlDownloadUpdate {
@@ -730,12 +768,15 @@ final class NxdlDownloader {
         let progressLock = NSLock()
         var lastProgress = NxdlDownloadProgressState()
         let track: (NxdlDownloadUpdate) -> Void = { update in
-            if case let .progress(state) = update {
+            if case var .progress(state) = update {
+                state.destinationURL = destination
                 progressLock.lock()
                 lastProgress = state
                 progressLock.unlock()
+                onUpdate(.progress(state))
+            } else {
+                onUpdate(update)
             }
-            onUpdate(update)
         }
 
         ensureBinary(config: config, onUpdate: track) { [weak self] result in

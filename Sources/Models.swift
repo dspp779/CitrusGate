@@ -30,6 +30,36 @@ enum ClassicUpdateStatus: Equatable {
     case maintenanceOrError(String)
 }
 
+enum ClientUpdateUI {
+    static func forceUpdateButtonTitle(gameID: String) -> String {
+        gameID == GameDefinition.mapleStoryClassic.id ? "完整下載" : "嘗試更新"
+    }
+
+    static func showsCheckButton(_ status: ClassicUpdateStatus) -> Bool {
+        status == .none
+    }
+
+    static func showsPrimaryUpdateButton(_ status: ClassicUpdateStatus) -> Bool {
+        status == .updateAvailable
+    }
+
+    static func showsForceUpdateButton(_ status: ClassicUpdateStatus) -> Bool {
+        switch status {
+        case .upToDate, .maintenanceOrError: return true
+        default: return false
+        }
+    }
+
+    static func statusCaption(_ status: ClassicUpdateStatus) -> String? {
+        switch status {
+        case .upToDate: return "已是最新版本"
+        case .updateAvailable: return "發現可用更新"
+        case let .maintenanceOrError(message): return message
+        case .none, .checking: return nil
+        }
+    }
+}
+
 struct OTPResult: Equatable {
     let value: String
     let retrievedAt: Date

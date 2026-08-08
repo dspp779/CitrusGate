@@ -989,7 +989,15 @@ final class AppModel: ObservableObject {
                     return
                 }
 
-                let diskGateTotal = isDeepUpdate ? min(total, 5 * DiskSpaceGate.gibibyte) : bytesToCheck
+                // Deep update re-downloads everything, so the gate must cover the
+                // full size — except cmsdlMapleStory, which purges WZ files as it
+                // goes and never holds more than ~5 GiB on disk at once.
+                let diskGateTotal: UInt64
+                if isDeepUpdate {
+                    diskGateTotal = config == .cmsdlMapleStory ? min(total, 5 * DiskSpaceGate.gibibyte) : total
+                } else {
+                    diskGateTotal = bytesToCheck
+                }
                 let evaluation = DiskSpaceGate.evaluate(totalBytes: diskGateTotal, freeBytes: free)
                 guard self.presentDiskGate(evaluation: evaluation) else {
                     self.statusMessage = "已取消下載"

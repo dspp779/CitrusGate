@@ -192,7 +192,6 @@ final class AppModel: ObservableObject {
         if game.authFlow == .webNexonPlug {
             screen = .classic
             statusMessage = "已選擇\(game.name)。請選擇主程式並開啟登入網頁。"
-            checkClientUpdate()
             // When a Classic NexonPlug URL is already driving this selection,
             // handleClassicNexonPlug() owns the picker; scheduling this delayed
             // picker too would show two pickers in a row.

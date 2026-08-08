@@ -685,13 +685,13 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         }
     }
 
-    private func presentUpToDateAlert() -> Bool {
+    private func presentUpToDateAlert(forceButtonTitle: String) -> Bool {
         let alert = NSAlert()
         alert.messageText = "已是最新版本"
         alert.informativeText = "經快速檢查，本機檔案完整且檔案大小一致。\n目前不需要下載額外檔案。"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "確定")
-        alert.addButton(withTitle: "嘗試深度更新")
+        alert.addButton(withTitle: forceButtonTitle)
         return alert.runModal() == .alertSecondButtonReturn
     }
 
@@ -706,7 +706,13 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         isDeepUpdate: Bool = false
     ) {
         isDownloadingGameClient = true
-        classicDownloadStatus = isDeepUpdate ? "正在準備深度更新…" : "正在檢查下載大小…"
+        if isDeepUpdate {
+            classicDownloadStatus = targetGame.id == GameDefinition.mapleStoryClassic.id
+                ? "正在準備完整下載…"
+                : "正在準備更新…"
+        } else {
+            classicDownloadStatus = "正在檢查下載大小…"
+        }
         statusLabel.stringValue = classicDownloadStatus
         updateButtons()
 
@@ -767,13 +773,19 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                         if required == 0 {
                             self.statusLabel.stringValue = "本機檔案完整且大小一致，已是最新版本"
                             self.finishGameClientDownload()
-                            if self.presentUpToDateAlert() {
+                            let forceTitle = ClientUpdateUI.forceUpdateButtonTitle(gameID: targetGame.id)
+                            let isClassic = targetGame.id == GameDefinition.mapleStoryClassic.id
+                            if self.presentUpToDateAlert(forceButtonTitle: forceTitle) {
                                 self.beginGameClientDownload(
                                     targetGame: targetGame,
                                     config: config,
                                     destination: destination,
-                                    progressTitle: progressTitle,
-                                    statusWhileDownloading: statusWhileDownloading,
+                                    progressTitle: isClassic
+                                        ? "完整下載新楓之谷：經典版"
+                                        : "更新新楓之谷",
+                                    statusWhileDownloading: isClassic
+                                        ? "正在完整下載新楓之谷：經典版…"
+                                        : "正在更新新楓之谷…",
                                     missingExecutableHint: missingExecutableHint,
                                     logLabel: logLabel,
                                     isDeepUpdate: true

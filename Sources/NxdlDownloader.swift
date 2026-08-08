@@ -214,7 +214,22 @@ enum NxdlProgressParser {
             return .progress(tracker.state)
         }
 
+        if let path = parseVerifiedFileName(cleaned) {
+            tracker.noteVerifiedFile(displayName(for: path))
+            return .progress(tracker.state)
+        }
+
         return nil
+    }
+
+    /// Parses nxdl's "already verified" line, e.g.
+    /// `Data/Base/Base.wz already present and verified (skipping download).`,
+    /// returning the source-relative path so callers can derive a display name.
+    static func parseVerifiedFileName(_ cleaned: String) -> String? {
+        let marker = " already present and verified"
+        guard let range = cleaned.range(of: marker) else { return nil }
+        let path = String(cleaned[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+        return path.isEmpty ? nil : path
     }
 
     /// Parses nxdl's aggregate bar, e.g.
@@ -517,6 +532,17 @@ final class NxdlProgressTracker {
         state.statusMessage = message
     }
 
+    func setDestinationURL(_ url: URL?) {
+        state.destinationURL = url
+    }
+
+    /// Publishes a file name parsed from an "already present and verified" line
+    /// so the UI can show which file is being integrity-checked.
+    func noteVerifiedFile(_ displayName: String) {
+        if state.currentFileNames == [displayName] { return }
+        state.currentFileNames = [displayName]
+    }
+
     func messageUpdate(_ message: String) -> NxdlDownloadUpdate {
         state.statusMessage = message
         return .message(message)
@@ -730,12 +756,15 @@ final class NxdlDownloader {
         let progressLock = NSLock()
         var lastProgress = NxdlDownloadProgressState()
         let track: (NxdlDownloadUpdate) -> Void = { update in
-            if case let .progress(state) = update {
+            if case var .progress(state) = update {
+                state.destinationURL = destination
                 progressLock.lock()
                 lastProgress = state
                 progressLock.unlock()
+                onUpdate(.progress(state))
+            } else {
+                onUpdate(update)
             }
-            onUpdate(update)
         }
 
         ensureBinary(config: config, onUpdate: track) { [weak self] result in

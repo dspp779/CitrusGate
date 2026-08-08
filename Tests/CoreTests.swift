@@ -22,6 +22,7 @@ enum CoreTests {
         try testQuarantineStatusWithAttribute()
         try testQuarantineRemovalErrorDescription()
         try testNxdlProgressParser()
+        try testNxdlVerifiedFileNameParser()
         try testNxdlOutputStreamParser()
         try testOpenLauncherArguments()
         try testWindowsPathFilenameNormalizer()
@@ -36,7 +37,7 @@ enum CoreTests {
         try testSessionExpiredDetection()
         try testClassicUpdateStatusEnum()
         try testClientUpdateUIHelpers()
-        print("CoreTests: 33 tests passed")
+        print("CoreTests: 34 tests passed")
     }
 
 
@@ -461,6 +462,38 @@ enum CoreTests {
         let gluedRaw = "  [===>------] 84.00 MiB/586.71 MiB ( 6.88 MiB/s) a.bundle" + overallRaw
         let glued = try require(NxdlProgressParser.parseOverallProgress(gluedRaw), "glued overall")
         try expect(glued.totalText == "2.76 GiB", "glued overall keeps grand total")
+    }
+
+    private static func testNxdlVerifiedFileNameParser() throws {
+        let name = try require(
+            NxdlProgressParser.parseVerifiedFileName(
+                "Data/Base/Base.wz already present and verified (skipping download)."
+            ),
+            "verified path"
+        )
+        try expect(name == "Data/Base/Base.wz", "verified basename path")
+
+        try expect(
+            NxdlProgressParser.parseVerifiedFileName("下載中：1 / 2") == nil,
+            "non-verified line"
+        )
+
+        let tracker = NxdlProgressTracker()
+        tracker.setDestinationURL(URL(fileURLWithPath: "/Games/MapleStory"))
+        _ = NxdlProgressParser.ingestLine(
+            "⠙ [00:00:01] [===>----] 1.0 GiB/10.0 GiB (2.5 GiB/s, ETA 4s)",
+            into: tracker
+        )
+        _ = NxdlProgressParser.ingestLine(
+            "Data/Base/Base.wz already present and verified (skipping download).",
+            into: tracker
+        )
+        try expect(tracker.state.isCheckingIntegrity, "GiB/s → checking")
+        try expect(
+            tracker.state.currentFileNamesText == "Base.wz"
+                || tracker.state.currentFileNamesText?.contains("Base.wz") == true,
+            "verified line publishes file name"
+        )
     }
 
     private static func testNxdlOutputStreamParser() throws {

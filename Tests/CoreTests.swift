@@ -35,7 +35,8 @@ enum CoreTests {
         try testNxdlManifestParser()
         try testSessionExpiredDetection()
         try testClassicUpdateStatusEnum()
-        print("CoreTests: 32 tests passed")
+        try testClientUpdateUIHelpers()
+        print("CoreTests: 33 tests passed")
     }
 
 
@@ -815,6 +816,33 @@ enum CoreTests {
 
         let networkError = BeanfunError.network("連線逾時")
         try expect(!networkError.isSessionExpired, "network timeout is not session expiration")
+    }
+
+    private static func testClientUpdateUIHelpers() throws {
+        try expect(
+            ClientUpdateUI.forceUpdateButtonTitle(gameID: GameDefinition.mapleStory.id) == "嘗試更新",
+            "maple force title"
+        )
+        try expect(
+            ClientUpdateUI.forceUpdateButtonTitle(gameID: GameDefinition.mapleStoryClassic.id) == "完整下載",
+            "classic force title"
+        )
+        try expect(ClientUpdateUI.showsCheckButton(.none), "none → check")
+        try expect(!ClientUpdateUI.showsCheckButton(.upToDate), "upToDate → no check")
+        try expect(ClientUpdateUI.showsForceUpdateButton(.upToDate), "upToDate → force")
+        try expect(ClientUpdateUI.showsForceUpdateButton(.maintenanceOrError("x")), "error → force")
+        try expect(!ClientUpdateUI.showsForceUpdateButton(.updateAvailable), "available → no force")
+        try expect(ClientUpdateUI.showsPrimaryUpdateButton(.updateAvailable), "available → update")
+        try expect(!ClientUpdateUI.showsPrimaryUpdateButton(.upToDate), "upToDate → no primary update")
+        try expect(ClientUpdateUI.statusCaption(.upToDate) == "已是最新版本", "upToDate caption")
+        try expect(ClientUpdateUI.statusCaption(.updateAvailable) == "發現可用更新", "available caption")
+        try expect(ClientUpdateUI.statusCaption(.checking) == nil, "checking has no caption")
+        try expect(ClientUpdateUI.statusCaption(.none) == nil, "none has no caption")
+        if let msg = ClientUpdateUI.statusCaption(.maintenanceOrError("無法檢查更新")) {
+            try expect(msg == "無法檢查更新", "error caption passthrough")
+        } else {
+            throw TestFailure(message: "expected error caption")
+        }
     }
 
     private static func testClassicUpdateStatusEnum() throws {

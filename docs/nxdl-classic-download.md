@@ -191,6 +191,12 @@ indicatif 在非 TTY 會關閉即時進度。因此 `NxdlDownloader` 以 `openpt
 
 ---
 
+## 檢查更新（App UI）
+
+若已設定有效 `Maplestory_Classic.exe` 路徑，App 同樣提供手動「檢查更新」。最新狀態下的強制路徑按鈕標示為「完整下載」（非「嘗試更新」），因 nxdl 深度更新會重新下載整包客戶端。
+
+---
+
 ## 在 Beanfun OTP 中的流程
 
 ```text

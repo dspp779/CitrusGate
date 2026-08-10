@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import UniformTypeIdentifiers
 
 final class AppController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
@@ -65,6 +66,9 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     // Classic Mode UI
     private let openClassicWebButton = NSButton(title: "開啟官方登入網頁", target: nil, action: nil)
     private let claimNexonPlugButton = NSButton(title: "將 NexonPlug 設為由 Beanfun OTP 處理", target: nil, action: nil)
+    private let nexonPlugBoundLabel = NSTextField(
+        wrappingLabelWithString: "NexonPlug 已由 Beanfun OTP 處理"
+    )
     private let downloadClassicButton = NSButton(title: "下載經典版", target: nil, action: nil)
     private let downloadMapleStoryButton = NSButton(title: "下載新楓之谷", target: nil, action: nil)
     private let classicNoticeLabel = NSTextField(wrappingLabelWithString: "網頁登入後會透過 NexonPlug:// 傳送參數啟動經典版。")
@@ -176,10 +180,16 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         classicNoticeLabel.font = NSFont.systemFont(ofSize: 11)
         classicNoticeLabel.textColor = NSColor.secondaryLabelColor
 
+        nexonPlugBoundLabel.alignment = .center
+        nexonPlugBoundLabel.font = NSFont.systemFont(ofSize: 11)
+        nexonPlugBoundLabel.textColor = NSColor.secondaryLabelColor
+        nexonPlugBoundLabel.isHidden = true
+
         classicContainer = NSStackView(views: [
             classicNoticeLabel,
             openClassicWebButton,
             claimNexonPlugButton,
+            nexonPlugBoundLabel,
             downloadClassicButton,
         ])
         classicContainer.orientation = .vertical
@@ -288,6 +298,10 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         chooseExeButton.isHidden = hasExe || screen == .classic
         downloadMapleStoryButton.isHidden = hasExe || selectedGame?.id != GameDefinition.mapleStory.id || screen == .classic
         downloadClassicButton.isHidden = hasExe || selectedGame?.id != GameDefinition.mapleStoryClassic.id
+
+        if screen == .classic {
+            refreshNexonPlugHandlerStatus()
+        }
 
         if screen == .games || screen == .accounts {
             tableView.reloadData()
@@ -894,10 +908,22 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             Self.beanfunOTPBundleID as NSString
         )
         if status == noErr {
+            refreshNexonPlugHandlerStatus()
             statusLabel.stringValue = "已將 NexonPlug 設為由 Beanfun OTP 處理"
         } else {
             showError(BeanfunError.rejected("設定 NexonPlug 處理程式失敗（代碼 \(status)）"))
         }
+    }
+
+    private func refreshNexonPlugHandlerStatus() {
+        let current = LSCopyDefaultHandlerForURLScheme(Self.nexonPlugScheme as CFString)?
+            .takeRetainedValue() as String?
+        let bound = NexonPlugHandlerStatus.isBound(
+            currentHandlerBundleID: current,
+            selfBundleID: Self.beanfunOTPBundleID
+        )
+        claimNexonPlugButton.isHidden = bound
+        nexonPlugBoundLabel.isHidden = !bound
     }
 
     @objc private func handlePrimary() {

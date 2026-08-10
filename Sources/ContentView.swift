@@ -248,10 +248,17 @@ struct ContentView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button("將 NexonPlug 設為由 Beanfun OTP 處理") {
-                model.claimNexonPlugHandler()
+            if model.isNexonPlugHandler {
+                Text("NexonPlug 已由 Beanfun OTP 處理")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                Button("將 NexonPlug 設為由 Beanfun OTP 處理") {
+                    model.claimNexonPlugHandler()
+                }
+                .buttonStyle(.link)
             }
-            .buttonStyle(.link)
             ClientUpdateActionsSection(model: model)
             Button {
                 model.openClassicLoginPage()

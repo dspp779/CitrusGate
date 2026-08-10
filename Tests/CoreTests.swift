@@ -38,7 +38,8 @@ enum CoreTests {
         try testSessionExpiredDetection()
         try testClassicUpdateStatusEnum()
         try testClientUpdateUIHelpers()
-        print("CoreTests: 35 tests passed")
+        try testNexonPlugHandlerStatus()
+        print("CoreTests: 36 tests passed")
     }
 
 
@@ -924,6 +925,41 @@ enum CoreTests {
         } else {
             throw TestFailure(message: "expected error caption")
         }
+    }
+
+    private static func testNexonPlugHandlerStatus() throws {
+        try expect(
+            !NexonPlugHandlerStatus.isBound(currentHandlerBundleID: nil, selfBundleID: "local.ogom.beanfunotp"),
+            "nil handler → unbound"
+        )
+        try expect(
+            !NexonPlugHandlerStatus.isBound(
+                currentHandlerBundleID: "com.nexon.plug",
+                selfBundleID: "local.ogom.beanfunotp"
+            ),
+            "other handler → unbound"
+        )
+        try expect(
+            !NexonPlugHandlerStatus.isBound(
+                currentHandlerBundleID: "local.ogom.beanfunotp.legacy",
+                selfBundleID: "local.ogom.beanfunotp"
+            ),
+            "Legacy handler is not Modern bound"
+        )
+        try expect(
+            NexonPlugHandlerStatus.isBound(
+                currentHandlerBundleID: "local.ogom.beanfunotp",
+                selfBundleID: "local.ogom.beanfunotp"
+            ),
+            "same Bundle ID → bound"
+        )
+        try expect(
+            NexonPlugHandlerStatus.isBound(
+                currentHandlerBundleID: "local.ogom.beanfunotp.legacy",
+                selfBundleID: "local.ogom.beanfunotp.legacy"
+            ),
+            "Legacy same Bundle ID → bound"
+        )
     }
 
     private static func testClassicUpdateStatusEnum() throws {

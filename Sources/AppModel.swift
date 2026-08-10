@@ -80,6 +80,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var gameClientDownloadTitle = ""
     @Published var showClassicDownloadProgress = false
     @Published private(set) var classicUpdateStatus: ClassicUpdateStatus = .none
+    @Published private(set) var isNexonPlugHandler = false
 
     private let defaults: UserDefaults
     private var pendingClassicPassargTokens: [String]?
@@ -191,6 +192,7 @@ final class AppModel: ObservableObject {
         resetGameSession()
         if game.authFlow == .webNexonPlug {
             screen = .classic
+            refreshNexonPlugHandlerStatus()
             statusMessage = "已選擇\(game.name)。請選擇主程式並開啟登入網頁。"
             // When a Classic NexonPlug URL is already driving this selection,
             // handleClassicNexonPlug() owns the picker; scheduling this delayed
@@ -234,6 +236,7 @@ final class AppModel: ObservableObject {
         guard game.usesBeanfunQR else {
             errorMessage = "新楓之谷：經典版請使用網頁登入"
             screen = .classic
+            refreshNexonPlugHandlerStatus()
             return
         }
         loginTask?.cancel()
@@ -650,10 +653,20 @@ final class AppModel: ObservableObject {
             Self.beanfunOTPBundleID as NSString
         )
         if status == noErr {
+            refreshNexonPlugHandlerStatus()
             statusMessage = "已將 NexonPlug 設為由 Beanfun OTP 處理"
         } else {
             errorMessage = "設定 NexonPlug 處理程式失敗（代碼 \(status)）"
         }
+    }
+
+    func refreshNexonPlugHandlerStatus() {
+        let current = LSCopyDefaultHandlerForURLScheme(Self.nexonPlugScheme as CFString)?
+            .takeRetainedValue() as String?
+        isNexonPlugHandler = NexonPlugHandlerStatus.isBound(
+            currentHandlerBundleID: current,
+            selfBundleID: Self.beanfunOTPBundleID
+        )
     }
 
     func downloadClassicClient() {
@@ -1099,6 +1112,7 @@ final class AppModel: ObservableObject {
             selectGame(GameDefinition.mapleStoryClassic)
         } else {
             screen = .classic
+            refreshNexonPlugHandlerStatus()
             executablePath = defaults.string(
                 forKey: executablePathKey(for: GameDefinition.mapleStoryClassic)
             ) ?? ""

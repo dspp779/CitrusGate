@@ -30,6 +30,13 @@ enum ClassicUpdateStatus: Equatable {
     case maintenanceOrError(String)
 }
 
+enum NexonPlugHandlerStatus {
+    static func isBound(currentHandlerBundleID: String?, selfBundleID: String) -> Bool {
+        guard let currentHandlerBundleID else { return false }
+        return currentHandlerBundleID == selfBundleID
+    }
+}
+
 enum ClientUpdateUI {
     static func forceUpdateButtonTitle(gameID: String) -> String {
         gameID == GameDefinition.mapleStoryClassic.id ? "完整下載" : "嘗試更新"

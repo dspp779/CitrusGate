@@ -728,117 +728,24 @@ final class BeanfunClient {
     }
 
     func fetchOTP(for account: GameAccount, game: GameDefinition) async throws -> OTPResult {
-        log("[OTP 1/6] 初始化\(game.name)啟動：id=\(account.id)，sn=\(account.sn)，name=\(account.displayName)")
-        let step2URL = try url(
-            "https://\(Self.host)/beanfun_block/game_zone/game_start_step2.aspx",
-            query: [
-                "service_code": game.serviceCode,
-                "service_region": game.serviceRegion,
-                "sotp": account.sn,
-                "dt": Self.method2Timestamp(),
-            ]
-        )
-        let step2Response = try await request(step2URL)
-        let step2HTML = try text(step2Response.data)
-        let start = try parseStartData(step2HTML)
-        let ppppp = BeanfunWebStartOTP.ppppp(from: step2HTML, fallback: Self.ppppp)
-        log("  LongPolling key=\(start.longPollingKey)")
-        log("  account_id=\(start.accountID)")
-        log("  sn=\(start.sn)")
-        log("  name=\(start.displayName)")
-        log("  create_time=\(start.createTime)")
-        secret("  dynamic_session_guard=\(start.guardName)=\(start.guardValue)")
-        if let launch = BeanfunWebStartOTP.launchObject(from: step2HTML) {
-            let ticket = GGMLaunchTicket(
-                region: launch.region,
-                sn: launch.sn,
-                command: BeanfunWebStartOTP.ggmCommand(serviceCode: game.serviceCode, html: step2HTML),
-                data: launch.data
-            )
-            ggmLaunchHandler(ticket)
-            log("  GGM URI 已可在進階模式複製：Region=\(ticket.region) SN=\(ticket.sn) Cmd=\(ticket.command) Data=\(ticket.data.count) chars")
-            if let launchTicket = try? GGMDataParam.launchTicket(from: launch.data) {
-                log("  Data 離線解密：LaunchTicket=\(launchTicket.count) chars")
-            }
-        } else if start.ggmData.isEmpty {
-            log("  頁面沒有 m_objData.data")
-        } else {
-            log("  m_objData.data \(start.ggmData.count) chars")
-        }
-        if ppppp != Self.ppppp {
-            log("  step2 內嵌 ppppp 與內建常數不同，改用頁面值")
-        }
-        for hint in BeanfunWebStartOTP.pageHints(from: step2HTML) {
-            log("  step2：\(hint)")
-        }
-        guard start.accountID == account.id, start.sn == account.sn else {
-            throw BeanfunError.parse("step2 回傳帳號與所選帳號不同")
-        }
+        let session = try await beginGameStart(for: account, game: game)
 
         log("[OTP 2/6] 取得 SecretCode")
         let secretURL = try makeURL("https://\(Self.loginHost)/generic_handlers/get_cookies.ashx")
-        let secretResponse = try await request(secretURL, referer: step2URL)
+        let secretResponse = try await request(secretURL, referer: session.step2URL)
         let secretCode = try capture(
             #"m_strSecretCode\s*=\s*'([^']+)'"#,
             in: try text(secretResponse.data),
             label: "SecretCode"
         )
         secret("  SecretCode=\(secretCode)")
-        secret("  ppppp=\(ppppp)")
+        secret("  ppppp=\(session.ppppp)")
 
-        log("[OTP 3/6] 登記遊戲啟動")
-        let recordURL = try makeURL("https://\(Self.host)/beanfun_block/generic_handlers/record_service_start.ashx")
-        let recordResponse = try await request(
-            recordURL,
-            method: "POST",
-            form: [
-                "service_code": game.serviceCode,
-                "service_region": game.serviceRegion,
-                "service_account_id": start.accountID,
-                "sotp": start.sn,
-                "service_account_display_name": start.displayName,
-                "service_account_create_time": start.createTime,
-                start.guardName: start.guardValue,
-            ],
-            referer: step2URL,
-            sensitiveFormKeys: [start.guardName]
-        )
-        let recordText = try text(recordResponse.data)
-        guard recordText.range(
-            of: #"['"]?intResult['"]?\s*:\s*1"#,
-            options: .regularExpression
-        ) != nil else {
-            let lower = recordText.lowercased()
-            if lower.contains("登入") || lower.contains("逾時") || lower.contains("session") || lower.contains("expired") {
-                throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
-            }
-            throw BeanfunError.rejected("record_service_start：\(recordText.prefix(300))")
-        }
-        log("  record_service_start：Success")
-
-        log("[OTP 4/6] 背景啟動 LongPolling")
-        let pollURL = try url(
-            "https://\(Self.host)/generic_handlers/get_result.ashx",
-            query: [
-                "meth": "GetResultByLongPolling",
-                "key": start.longPollingKey,
-                "_": Self.loginTimestamp(),
-            ]
-        )
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let response = try await self.request(pollURL, referer: step2URL)
-                self.log("  LongPolling 背景回應：\((try? self.text(response.data))?.prefix(240) ?? "")")
-            } catch {
-                self.log("  LongPolling 背景結束：\(error.localizedDescription)")
-            }
-        }
-        await Task.yield()
-        log("  LongPolling 已開始；主流程繼續")
+        try await recordServiceStart(session)
+        await startLongPolling(session)
 
         if game.id == GameDefinition.mapleStory.id {
-            guard let launch = BeanfunWebStartOTP.launchObject(from: step2HTML) else {
+            guard let launch = session.launch else {
                 throw BeanfunError.parse("step2 沒有 m_objData，無法以 otp_v2 取得 OTP")
             }
             return try await fetchOTPV2(
@@ -853,19 +760,20 @@ final class BeanfunClient {
         guard let webToken = cookieValue(named: "bfWebToken") else {
             throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
         }
+        let start = session.start
         let otpURL = try BeanfunWebStartOTP.makeURL(
             host: Self.host,
             sn: start.longPollingKey,
             webToken: webToken,
             secretCode: secretCode,
-            ppppp: ppppp,
+            ppppp: session.ppppp,
             serviceCode: game.serviceCode,
             serviceRegion: game.serviceRegion,
             serviceAccount: start.accountID,
             createTime: start.createTime,
             d: BeanfunWebStartOTP.cacheBuster()
         )
-        let otpResponse = try await request(otpURL, referer: step2URL)
+        let otpResponse = try await request(otpURL, referer: session.step2URL)
         let envelope = try text(otpResponse.data).trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = envelope.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
         guard parts.count == 2 else {
@@ -896,11 +804,156 @@ final class BeanfunClient {
         guard let otp = String(data: plaintext, encoding: .utf8), !otp.isEmpty else {
             throw BeanfunError.parse("OTP 解密結果不是 UTF-8")
         }
-        // Games expect Beanfun's ServiceAccountID, not the editable display name.
         let commandLine = game.commandLine(accountID: account.id, otp: otp)
         log("  OTP 解密成功：\(otp.count) 字元")
         secret("  OTP=\(otp)")
         return OTPResult(value: otp, retrievedAt: Date(), commandLine: commandLine)
+    }
+
+    /// step2 + record only. Does **not** POST otp_v2, so GGM can consume LaunchTicket.
+    func prepareGGMLaunchTicket(for account: GameAccount, game: GameDefinition) async throws -> GGMLaunchTicket {
+        guard game.id == GameDefinition.mapleStory.id else {
+            throw BeanfunError.parse("gamaniagames 啟動僅支援新楓之谷")
+        }
+        let session = try await beginGameStart(for: account, game: game)
+        guard let ticket = session.ticket else {
+            throw BeanfunError.parse("step2 沒有 m_objData，無法以 gamaniagames:// 啟動")
+        }
+        try await recordServiceStart(session)
+        await startLongPolling(session)
+        log("  已準備 GGM URI，未 POST otp_v2（票券留給 GGMWebStart）")
+        return ticket
+    }
+
+    private struct GameStartSession {
+        let game: GameDefinition
+        let step2URL: URL
+        let start: GameStartData
+        let ppppp: String
+        let launch: BeanfunWebStartOTP.LaunchObject?
+        let ticket: GGMLaunchTicket?
+    }
+
+    private func beginGameStart(for account: GameAccount, game: GameDefinition) async throws -> GameStartSession {
+        log("[OTP 1/6] 初始化\(game.name)啟動：id=\(account.id)，sn=\(account.sn)，name=\(account.displayName)")
+        let step2URL = try url(
+            "https://\(Self.host)/beanfun_block/game_zone/game_start_step2.aspx",
+            query: [
+                "service_code": game.serviceCode,
+                "service_region": game.serviceRegion,
+                "sotp": account.sn,
+                "dt": Self.method2Timestamp(),
+            ]
+        )
+        let step2Response = try await request(step2URL)
+        let step2HTML = try text(step2Response.data)
+        let start = try parseStartData(step2HTML)
+        let ppppp = BeanfunWebStartOTP.ppppp(from: step2HTML, fallback: Self.ppppp)
+        log("  LongPolling key=\(start.longPollingKey)")
+        log("  account_id=\(start.accountID)")
+        log("  sn=\(start.sn)")
+        log("  name=\(start.displayName)")
+        log("  create_time=\(start.createTime)")
+        secret("  dynamic_session_guard=\(start.guardName)=\(start.guardValue)")
+        let launch = BeanfunWebStartOTP.launchObject(from: step2HTML)
+        var ticket: GGMLaunchTicket?
+        if let launch {
+            let value = GGMLaunchTicket(
+                region: launch.region,
+                sn: launch.sn,
+                command: BeanfunWebStartOTP.ggmCommand(serviceCode: game.serviceCode, html: step2HTML),
+                data: launch.data
+            )
+            ticket = value
+            ggmLaunchHandler(value)
+            log("  GGM URI 已可在進階模式複製：Region=\(value.region) SN=\(value.sn) Cmd=\(value.command) Data=\(value.data.count) chars")
+            if let launchTicket = try? GGMDataParam.launchTicket(from: launch.data) {
+                log("  Data 離線解密：LaunchTicket=\(launchTicket.count) chars")
+            }
+        } else if start.ggmData.isEmpty {
+            log("  頁面沒有 m_objData.data")
+        } else {
+            log("  m_objData.data \(start.ggmData.count) chars")
+        }
+        if ppppp != Self.ppppp {
+            log("  step2 內嵌 ppppp 與內建常數不同，改用頁面值")
+        }
+        for hint in BeanfunWebStartOTP.pageHints(from: step2HTML) {
+            log("  step2：\(hint)")
+        }
+        guard start.accountID == account.id, start.sn == account.sn else {
+            throw BeanfunError.parse("step2 回傳帳號與所選帳號不同")
+        }
+        return GameStartSession(
+            game: game,
+            step2URL: step2URL,
+            start: start,
+            ppppp: ppppp,
+            launch: launch,
+            ticket: ticket
+        )
+    }
+
+    private func recordServiceStart(_ session: GameStartSession) async throws {
+        let start = session.start
+        log("[OTP 3/6] 登記遊戲啟動")
+        let recordURL = try makeURL("https://\(Self.host)/beanfun_block/generic_handlers/record_service_start.ashx")
+        let recordResponse = try await request(
+            recordURL,
+            method: "POST",
+            form: [
+                "service_code": session.game.serviceCode,
+                "service_region": session.game.serviceRegion,
+                "service_account_id": start.accountID,
+                "sotp": start.sn,
+                "service_account_display_name": start.displayName,
+                "service_account_create_time": start.createTime,
+                start.guardName: start.guardValue,
+            ],
+            referer: session.step2URL,
+            sensitiveFormKeys: [start.guardName]
+        )
+        let recordText = try text(recordResponse.data)
+        guard recordText.range(
+            of: #"['"]?intResult['"]?\s*:\s*1"#,
+            options: .regularExpression
+        ) != nil else {
+            let lower = recordText.lowercased()
+            if lower.contains("登入") || lower.contains("逾時") || lower.contains("session") || lower.contains("expired") {
+                throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
+            }
+            throw BeanfunError.rejected("record_service_start：\(recordText.prefix(300))")
+        }
+        log("  record_service_start：Success")
+    }
+
+    private func startLongPolling(_ session: GameStartSession) async {
+        log("[OTP 4/6] 背景啟動 LongPolling")
+        let pollURL: URL
+        do {
+            pollURL = try url(
+                "https://\(Self.host)/generic_handlers/get_result.ashx",
+                query: [
+                    "meth": "GetResultByLongPolling",
+                    "key": session.start.longPollingKey,
+                    "_": Self.loginTimestamp(),
+                ]
+            )
+        } catch {
+            log("  LongPolling URL 無效：\(error.localizedDescription)")
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let response = try await self.request(pollURL, referer: session.step2URL)
+                self.log("  LongPolling 背景回應：\((try? self.text(response.data))?.prefix(240) ?? "")")
+            } catch {
+                self.log("  LongPolling 背景結束：\(error.localizedDescription)")
+            }
+        }
+        await Task.yield()
+        log("  LongPolling 已開始；主流程繼續")
     }
 
     private func fetchOTPV2(

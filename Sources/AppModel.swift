@@ -364,6 +364,10 @@ final class AppModel: ObservableObject {
                 try Task.checkCancellation()
                 otp = result
                 isBusy = false
+                if game.id == GameDefinition.mapleStory.id {
+                    ggmLaunchTicket = nil
+                    appendLog("  原生 otp_v2 已兌現 LaunchTicket，此 URI 不可再交給 GGM")
+                }
                 if launchWhenReady {
                     statusMessage = "OTP 已取得，正在以 \(account.displayName) 開啟遊戲…"
                     switch pendingLaunchKind {
@@ -375,10 +379,8 @@ final class AppModel: ObservableObject {
                         launchViaOpen(launcher: .cyder)
                     case .mapleStoryWine:
                         launchViaMapleStoryLauncherWine()
-                    case .ggmWebStart:
-                        launchViaGGM()
-                    case .ggmSchemeViaCyder:
-                        launchViaGamaniagamesScheme()
+                    case .ggmWebStart, .ggmSchemeViaCyder:
+                        break
                     }
                 } else {
                     screen = .otp
@@ -390,22 +392,6 @@ final class AppModel: ObservableObject {
             } catch BeanfunError.cancelled {
                 isBusy = false
             } catch {
-                if launchWhenReady, ggmLaunchTicket != nil {
-                    switch pendingLaunchKind {
-                    case .ggmWebStart:
-                        appendLog("OTP 失敗，改以 Games Manager 啟動：\(error.localizedDescription)")
-                        isBusy = false
-                        launchViaGGM()
-                        return
-                    case .ggmSchemeViaCyder:
-                        appendLog("OTP 失敗，改以 gamaniagames scheme 啟動：\(error.localizedDescription)")
-                        isBusy = false
-                        launchViaGamaniagamesScheme()
-                        return
-                    default:
-                        break
-                    }
-                }
                 present(error)
             }
         }
@@ -570,7 +556,7 @@ final class AppModel: ObservableObject {
             return
         }
         pendingLaunchKind = .ggmSchemeViaCyder
-        launchSelectedAccount()
+        prepareGGMThenLaunch()
     }
 
     func launchSelectedAccountViaWine() {
@@ -592,7 +578,49 @@ final class AppModel: ObservableObject {
             return
         }
         pendingLaunchKind = .ggmWebStart
-        launchSelectedAccount()
+        prepareGGMThenLaunch()
+    }
+
+    private func prepareGGMThenLaunch() {
+        guard let game = selectedGame else {
+            errorMessage = "請先選擇遊戲"
+            return
+        }
+        guard let account = selectedAccount else {
+            errorMessage = "請先選擇\(game.name)帳號"
+            return
+        }
+        otpTask?.cancel()
+        otpCountdownTask?.cancel()
+        ggmLaunchTicket = nil
+        otp = nil
+        client.includeSecrets = includeSecrets
+        isBusy = true
+        statusMessage = "正在準備 \(account.displayName) 的 gamaniagames://…"
+        otpTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let ticket = try await client.prepareGGMLaunchTicket(for: account, game: game)
+                try Task.checkCancellation()
+                ggmLaunchTicket = ticket
+                isBusy = false
+                statusMessage = "URI 已準備，正在啟動…"
+                switch pendingLaunchKind {
+                case .ggmWebStart:
+                    launchViaGGM()
+                case .ggmSchemeViaCyder:
+                    launchViaGamaniagamesScheme()
+                default:
+                    break
+                }
+            } catch is CancellationError {
+                isBusy = false
+            } catch BeanfunError.cancelled {
+                isBusy = false
+            } catch {
+                present(error)
+            }
+        }
     }
 
     func launchViaOpen(launcher: OpenLauncher = .defaultApplication) {

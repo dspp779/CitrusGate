@@ -409,36 +409,23 @@ struct ContentView: View {
                     VStack(spacing: 10) {
                         if model.selectedGame?.id == GameDefinition.mapleStory.id {
                             VStack(spacing: 10) {
-                                Text("測試版啟動方式")
-                                    .font(.caption.bold())
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                HStack(spacing: 10) {
+                                    Button {
+                                        model.launchSelectedAccountViaNativeOTPCyder()
+                                    } label: {
+                                        Label("開啟", systemImage: "play.fill")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .disabled(model.areLaunchButtonsDisabled)
 
-                                Button {
-                                    model.launchSelectedAccountViaNativeOTPCyder()
-                                } label: {
-                                    Label("開啟", systemImage: "play.fill")
+                                    Button {
+                                        model.launchSelectedAccountViaGGMScheme()
+                                    } label: {
+                                        Label("開啟 gamaniagames://", systemImage: "link.circle.fill")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .disabled(model.areLaunchButtonsDisabled)
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(model.areLaunchButtonsDisabled)
-
-                                Text("離線解密 Data → POST otp_v2 → Cyder 開 MapleStory.exe")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                                Button {
-                                    model.launchSelectedAccountViaGGMScheme()
-                                } label: {
-                                    Label("開啟 gamaniagames://", systemImage: "link.circle.fill")
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(model.areLaunchButtonsDisabled)
-
-                                Text("取得 scheme URI 後 open 交給已註冊 handler（Cyder）")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
 
                                 DisclosureGroup("其他啟動方式") {
                                     VStack(spacing: 10) {

@@ -1207,14 +1207,20 @@ enum CoreTests {
         let expectedSN = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         let otp = try GGMDataParam.decryptOTPEnvelope("12345678897923ff842ec7e73d7595a98bff809d")
         try expect(otp == "OTP12345", "otp_v2 envelope decrypt")
+        let bakedHash = BeanfunWebStartOTP.ggmWebStartDLLHash
+        try expect(bakedHash.count == 64, "baked Hash must be 64 hex chars")
+        try expect(
+            bakedHash == "dfd568a69d87abcd8f4a93d1a4481ebb57712d1d28ab0b6fc018fcf140101e06",
+            "baked Hash must match GGM 1.5.0.2 GGMWebStart.dll, got \(bakedHash)"
+        )
+        try expect(bakedHash.allSatisfy(\.isHexDigit), "baked Hash must be hex")
         let body = BeanfunWebStartOTP.otpV2RequestBody(
             sn: expectedSN,
-            launchTicket: expectedTicket,
-            hash: String(repeating: "b", count: 64)
+            launchTicket: expectedTicket
         )
         let json = String(data: body, encoding: .utf8) ?? ""
         try expect(
-            json == "{\"SN\":\"\(expectedSN)\",\"LaunchTicket\":\"\(expectedTicket)\",\"CV\":\"1.5.0.2\",\"Hash\":\"\(String(repeating: "b", count: 64))\",\"arch\":\"x64\"}",
+            json == "{\"SN\":\"\(expectedSN)\",\"LaunchTicket\":\"\(expectedTicket)\",\"CV\":\"1.5.0.2\",\"Hash\":\"\(bakedHash)\",\"arch\":\"x64\"}",
             "otp_v2 JSON key order, got \(json)"
         )
     }

@@ -1,5 +1,4 @@
 import AppKit
-import CryptoKit
 import Foundation
 
 /// Builds `get_webstart_otp.ashx` the way Beanfun's WPF client does.
@@ -116,26 +115,18 @@ enum BeanfunWebStartOTP {
     static let otpV2URL =
         "https://tw.beanfun.com/beanfun_block/generic_handlers/get_webstart_otp_v2.ashx"
 
-    static var ggmWebStartDLLPath: String {
-        URL(fileURLWithPath: defaultWebStartPath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("GGMWebStart.dll")
-            .path
-    }
-
     /// Matches GGM 1.5.0.2 captures; used for `CV` on otp_v2 POST.
     static let ggmClientVersion = "1.5.0.2"
 
-    static func ggmWebStartDLLHash() throws -> String {
-        let path = ggmWebStartDLLPath
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
+    /// SHA-256 of GGM 1.5.0.2 `GGMWebStart.dll`. Baked in so native OTP does not
+    /// require Games Manager to be installed.
+    static let ggmWebStartDLLHash =
+        "dfd568a69d87abcd8f4a93d1a4481ebb57712d1d28ab0b6fc018fcf140101e06"
 
     static func otpV2RequestBody(
         sn: String,
         launchTicket: String,
-        hash: String,
+        hash: String = ggmWebStartDLLHash,
         cv: String = ggmClientVersion,
         arch: String = "x64"
     ) -> Data {
@@ -846,20 +837,16 @@ final class BeanfunClient {
         await Task.yield()
         log("  LongPolling 已開始；主流程繼續")
 
-        if let launch = BeanfunWebStartOTP.launchObject(from: step2HTML),
-           game.id == GameDefinition.mapleStory.id {
-            do {
-                return try await fetchOTPV2(
-                    launchData: launch.data,
-                    schemeSN: launch.sn,
-                    account: account,
-                    game: game
-                )
-            } catch let error as BeanfunError {
-                log("  otp_v2 離線解密或請求失敗，改走舊 GET：\(error.localizedDescription)")
-            } catch {
-                log("  otp_v2 離線解密或請求失敗，改走舊 GET：\(error.localizedDescription)")
+        if game.id == GameDefinition.mapleStory.id {
+            guard let launch = BeanfunWebStartOTP.launchObject(from: step2HTML) else {
+                throw BeanfunError.parse("step2 沒有 m_objData，無法以 otp_v2 取得 OTP")
             }
+            return try await fetchOTPV2(
+                launchData: launch.data,
+                schemeSN: launch.sn,
+                account: account,
+                game: game
+            )
         }
 
         log("[OTP 5/6] 取得 WebStart OTP envelope")
@@ -926,15 +913,13 @@ final class BeanfunClient {
         let launchTicket = try GGMDataParam.launchTicket(from: launchData)
         secret("  LaunchTicket=\(launchTicket)")
         secret("  otp_v2 SN=\(schemeSN)")
-        let hash = try BeanfunWebStartOTP.ggmWebStartDLLHash()
-        log("  GGMWebStart.dll SHA-256=\(hash.prefix(8))…（\(hash.count) chars）")
+        log("  GGMWebStart.dll SHA-256=\(BeanfunWebStartOTP.ggmWebStartDLLHash.prefix(8))…（內建）")
         guard let url = URL(string: BeanfunWebStartOTP.otpV2URL) else {
             throw BeanfunError.invalidURL(BeanfunWebStartOTP.otpV2URL)
         }
         let body = BeanfunWebStartOTP.otpV2RequestBody(
             sn: schemeSN,
-            launchTicket: launchTicket,
-            hash: hash
+            launchTicket: launchTicket
         )
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

@@ -816,6 +816,8 @@ final class AppModel: ObservableObject {
             }
         }
 
+        isBusy = true
+        statusMessage = "正在開啟 gamaniagames://…"
         do {
             try process.run()
             ggmTicketState.consume()

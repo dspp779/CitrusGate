@@ -408,65 +408,22 @@ struct ContentView: View {
                 } else if let account = model.selectedAccount {
                     VStack(spacing: 10) {
                         if model.selectedGame?.id == GameDefinition.mapleStory.id {
-                            VStack(spacing: 10) {
-                                HStack(spacing: 10) {
-                                    Button {
-                                        model.launchSelectedAccountViaNativeOTPCyder()
-                                    } label: {
-                                        Label("開啟", systemImage: "play.fill")
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .disabled(model.areLaunchButtonsDisabled)
-
-                                    Button {
-                                        model.launchSelectedAccountViaGGMScheme()
-                                    } label: {
-                                        Label("開啟 gamaniagames://", systemImage: "link.circle.fill")
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .disabled(model.areLaunchButtonsDisabled)
+                            HStack(spacing: 10) {
+                                Button {
+                                    model.launchSelectedAccountViaNativeOTPCyder()
+                                } label: {
+                                    Label("開啟", systemImage: "play.fill")
                                 }
+                                .buttonStyle(.bordered)
+                                .disabled(model.areLaunchButtonsDisabled)
 
-                                DisclosureGroup("其他啟動方式") {
-                                    VStack(spacing: 10) {
-                                        Button {
-                                            model.launchSelectedAccountViaGGM()
-                                        } label: {
-                                            Label("以 GGMWebStart.exe 啟動", systemImage: "square.stack.3d.up.fill")
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .disabled(model.areLaunchButtonsDisabled)
-
-                                        GGMWebStartPathCaption(model: model)
-
-                                        HStack(spacing: 10) {
-                                            Button {
-                                                model.launchSelectedAccountViaOpen()
-                                            } label: {
-                                                Label("開啟", systemImage: "play.fill")
-                                            }
-                                            .buttonStyle(.bordered)
-                                            .disabled(model.areLaunchButtonsDisabled)
-
-                                            Button {
-                                                model.launchSelectedAccountViaCyder()
-                                            } label: {
-                                                Label("以 Cyder 開啟", systemImage: "shippingbox")
-                                            }
-                                            .buttonStyle(.bordered)
-                                            .disabled(model.areLaunchButtonsDisabled)
-                                        }
-
-                                        Button {
-                                            model.launchSelectedAccountViaWine()
-                                        } label: {
-                                            Label("以 MapleStory Launcher 開啟", systemImage: "wineglass")
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .disabled(model.areLaunchButtonsDisabled)
-                                    }
-                                    .padding(.top, 6)
+                                Button {
+                                    model.launchSelectedAccountViaGGMScheme()
+                                } label: {
+                                    Label("開啟 gamaniagames://", systemImage: "link.circle.fill")
                                 }
+                                .buttonStyle(.bordered)
+                                .disabled(model.areLaunchButtonsDisabled)
                             }
                         } else {
                             HStack(spacing: 10) {
@@ -855,39 +812,6 @@ private struct GGMLaunchSection: View {
                 }
                 .padding(10)
             }
-        }
-    }
-}
-
-private struct GGMWebStartPathCaption: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        VStack(spacing: 4) {
-            if model.hasValidGGMWebStart {
-                Text("GGMWebStart：\(model.resolvedGGMWebStartPath)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-            } else {
-                Text("尚未找到 GGMWebStart.exe")
-                    .font(.caption.bold())
-                    .foregroundStyle(.orange)
-            }
-            Button("選擇 GGMWebStart.exe…") {
-                model.chooseGGMWebStart()
-            }
-            .buttonStyle(.link)
-            DisclosureGroup("如何找到 GGMWebStart.exe") {
-                Text(BeanfunWebStartOTP.webStartPathFinderHelp)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .multilineTextAlignment(.leading)
-                    .padding(.top, 4)
-            }
-            .font(.caption)
         }
     }
 }

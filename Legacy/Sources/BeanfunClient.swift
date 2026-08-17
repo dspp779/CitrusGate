@@ -1,6 +1,230 @@
 import AppKit
 import Foundation
 
+enum BeanfunWebStartOTP {
+    static func makeURL(
+        host: String,
+        sn: String,
+        webToken: String,
+        secretCode: String,
+        ppppp: String,
+        serviceCode: String,
+        serviceRegion: String,
+        serviceAccount: String,
+        createTime: String,
+        d: String
+    ) throws -> URL {
+        let createTimeEncoded = createTime.replacingOccurrences(of: " ", with: "%20")
+        let query = [
+            "SN=\(sn)",
+            "WebToken=\(webToken)",
+            "SecretCode=\(secretCode)",
+            "ppppp=\(ppppp)",
+            "ServiceCode=\(serviceCode)",
+            "ServiceRegion=\(serviceRegion)",
+            "ServiceAccount=\(serviceAccount)",
+            "CreateTime=\(createTimeEncoded)",
+            "d=\(d)",
+        ]
+        let value = "https://\(host)/beanfun_block/generic_handlers/get_webstart_otp.ashx?\(query.joined(separator: "&"))"
+        guard let url = URL(string: value) else { throw BeanfunError.invalidURL(value) }
+        return url
+    }
+
+    static func cacheBuster(at date: Date = Date()) -> String {
+        let millis = Int(date.timeIntervalSince1970 * 1000)
+        return String(Int32(truncatingIfNeeded: millis))
+    }
+
+    static func ppppp(from page: String, fallback: String) -> String {
+        let pattern = #"ppppp=([0-9A-Fa-f]{64})"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: page, range: NSRange(page.startIndex..., in: page)),
+              let range = Range(match.range(at: 1), in: page) else {
+            return fallback
+        }
+        return String(page[range])
+    }
+
+    static func pageHints(from html: String) -> [String] {
+        var hints: [String] = []
+        hints.append("HTML \(html.count) chars")
+        if let regex = try? NSRegularExpression(pattern: #"src=["']([^"']+)["']"#, options: .caseInsensitive) {
+            let range = NSRange(html.startIndex..., in: html)
+            for match in regex.matches(in: html, range: range) {
+                guard let valueRange = Range(match.range(at: 1), in: html) else { continue }
+                let src = String(html[valueRange])
+                if src.lowercased().contains(".js") { hints.append("script \(src)") }
+            }
+        }
+        if let regex = try? NSRegularExpression(pattern: #"[A-Za-z0-9_./-]+\.ashx[^"'<\s]*"#) {
+            let range = NSRange(html.startIndex..., in: html)
+            for match in regex.matches(in: html, range: range) {
+                guard let valueRange = Range(match.range, in: html) else { continue }
+                hints.append("ashx \(html[valueRange])")
+            }
+        }
+        let markers = [
+            "get_webstart_otp",
+            "ppppp=",
+            "GGM.LaunchGame",
+            "GGM.SmartLaunch",
+            "gamaniagames://",
+            "StartGame",
+        ]
+        for marker in markers {
+            if html.range(of: marker, options: .caseInsensitive) == nil {
+                hints.append("沒有 \(marker)")
+            } else {
+                hints.append("含 \(marker)")
+            }
+        }
+        for needle in ["GGM.LaunchGame", "GGM.SmartLaunch", "StartGame("] {
+            if let snippet = snippet(around: needle, in: html, radius: 220) {
+                hints.append("片段 \(redactSecrets(snippet))")
+            }
+        }
+        if let launch = launchObject(from: html) {
+            hints.append(
+                "m_objData region=\(launch.region) sn=\(launch.sn) data=\(launch.data.count) chars"
+            )
+        }
+        let accountFields = propertyNames(prefix: "MyAccountData", in: html)
+        if !accountFields.isEmpty {
+            hints.append("MyAccountData 欄位：\(accountFields.joined(separator: ", "))")
+        }
+        let launchFields = uniqueNames(
+            propertyNames(prefix: "m_objData", in: html) + objectLiteralKeys(named: "m_objData", in: html)
+        )
+        if !launchFields.isEmpty {
+            hints.append("m_objData 欄位：\(launchFields.joined(separator: ", "))")
+        }
+        for needle in ["m_objData =", "var m_objData", "function StartGame", "supportService", "var MyAccountData"] {
+            if let snippet = snippet(around: needle, in: html, radius: 480) {
+                hints.append("片段 \(redactSecrets(snippet))")
+            }
+        }
+        return hints
+    }
+
+    static func snippet(around needle: String, in html: String, radius: Int) -> String? {
+        guard let range = html.range(of: needle, options: .caseInsensitive) else { return nil }
+        let start = html.index(range.lowerBound, offsetBy: -radius, limitedBy: html.startIndex) ?? html.startIndex
+        let end = html.index(range.upperBound, offsetBy: radius, limitedBy: html.endIndex) ?? html.endIndex
+        return String(html[start..<end])
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
+
+    static func redactSecrets(_ text: String) -> String {
+        var value = summarizeDataField(in: text)
+        value = value.replacingOccurrences(
+            of: #"(WebToken|SecretCode|webToken|secretCode)\s*[:=]\s*['"][^'"]+['"]"#,
+            with: "$1=[redacted]",
+            options: .regularExpression
+        )
+        return value
+    }
+
+    static func summarizeDataField(in text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #""data"\s*:\s*"([^"]+)""#) else {
+            return text
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let valueRange = Range(match.range(at: 1), in: text) else {
+            return text
+        }
+        let payload = String(text[valueRange])
+        guard payload.count >= 24 else { return text }
+        return text.replacingCharacters(in: valueRange, with: "[\(payload.count) chars]")
+    }
+
+    struct LaunchObject {
+        let region: String
+        let sn: String
+        let data: String
+    }
+
+    static func launchObject(from html: String) -> LaunchObject? {
+        guard let keyword = html.range(of: "m_objData") else { return nil }
+        guard let braceStart = html[keyword.upperBound...].firstIndex(of: "{") else { return nil }
+        var depth = 0
+        var braceEnd: String.Index?
+        var index = braceStart
+        while index < html.endIndex {
+            let character = html[index]
+            if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0 {
+                    braceEnd = html.index(after: index)
+                    break
+                }
+            }
+            index = html.index(after: index)
+        }
+        guard let braceEnd else { return nil }
+        let json = String(html[braceStart..<braceEnd])
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let region = object["region"] as? String,
+              let sn = object["sn"] as? String,
+              let payload = object["data"] as? String,
+              !payload.isEmpty else {
+            return nil
+        }
+        return LaunchObject(region: region, sn: sn, data: payload)
+    }
+
+    static func propertyNames(prefix: String, in html: String) -> [String] {
+        let escaped = NSRegularExpression.escapedPattern(for: prefix)
+        guard let regex = try? NSRegularExpression(pattern: #"\#(escaped)\.([A-Za-z_][A-Za-z0-9_]*)"#) else {
+            return []
+        }
+        let range = NSRange(html.startIndex..., in: html)
+        var names: [String] = []
+        var seen = Set<String>()
+        for match in regex.matches(in: html, range: range) {
+            guard let valueRange = Range(match.range(at: 1), in: html) else { continue }
+            let name = String(html[valueRange])
+            if seen.insert(name).inserted {
+                names.append(name)
+            }
+        }
+        return names
+    }
+
+    static func objectLiteralKeys(named name: String, in html: String) -> [String] {
+        let escaped = NSRegularExpression.escapedPattern(for: name)
+        guard let regex = try? NSRegularExpression(pattern: #"\#(escaped)\s*=\s*\{([^}]*)\}"#),
+              let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+              let innerRange = Range(match.range(at: 1), in: html) else {
+            return []
+        }
+        let inner = String(html[innerRange])
+        guard let keyRegex = try? NSRegularExpression(pattern: #"([A-Za-z_][A-Za-z0-9_]*)\s*:"#) else {
+            return []
+        }
+        var names: [String] = []
+        var seen = Set<String>()
+        let range = NSRange(inner.startIndex..., in: inner)
+        for match in keyRegex.matches(in: inner, range: range) {
+            guard let valueRange = Range(match.range(at: 1), in: inner) else { continue }
+            let name = String(inner[valueRange])
+            if seen.insert(name).inserted {
+                names.append(name)
+            }
+        }
+        return names
+    }
+
+    static func uniqueNames(_ names: [String]) -> [String] {
+        var seen = Set<String>()
+        return names.filter { seen.insert($0).inserted }
+    }
+}
+
 final class BeanfunClient {
     static let host = "tw.beanfun.com"
     static let loginHost = "tw.newlogin.beanfun.com"
@@ -563,17 +787,29 @@ final class BeanfunClient {
                     self.finish(completion, .failure(BeanfunError.expired(BeanfunError.defaultExpiredMessage)))
                     return
                 }
+                let ppppp = BeanfunWebStartOTP.ppppp(from: page, fallback: Self.ppppp)
                 self.log("  LongPolling key=\(start.longPollingKey)")
                 self.log("  account_id=\(start.accountID)")
                 self.log("  sn=\(start.sn)")
                 self.log("  name=\(start.displayName)")
                 self.log("  create_time=\(start.createTime)")
                 self.secret("  dynamic_session_guard=\(start.guardName)=\(start.guardValue)")
+                if start.ggmData.isEmpty {
+                    self.log("  頁面沒有 m_objData.data")
+                } else {
+                    self.log("  m_objData.data \(start.ggmData.count) chars")
+                }
+                if ppppp != Self.ppppp {
+                    self.log("  step2 內嵌 ppppp 與內建常數不同，改用頁面值")
+                }
+                for hint in BeanfunWebStartOTP.pageHints(from: page) {
+                    self.log("  step2：\(hint)")
+                }
                 guard start.accountID == account.id, start.sn == account.sn else {
                     self.finish(completion, .failure(BeanfunError.parse("step2 回傳帳號與所選帳號不同")))
                     return
                 }
-                self.fetchOTPStep2(start: start, step2URL: step2URL, account: account, game: game, gen: gen, completion: completion)
+                self.fetchOTPStep2(start: start, step2URL: step2URL, ppppp: ppppp, account: account, game: game, gen: gen, completion: completion)
             }
         }
     }
@@ -581,6 +817,7 @@ final class BeanfunClient {
     private func fetchOTPStep2(
         start: GameStartData,
         step2URL: URL,
+        ppppp: String,
         account: GameAccount,
         game: GameDefinition,
         gen: UInt64,
@@ -607,11 +844,12 @@ final class BeanfunClient {
                     return
                 }
                 self.secret("  SecretCode=\(secretCode)")
-                self.secret("  ppppp=\(Self.ppppp)")
+                self.secret("  ppppp=\(ppppp)")
                 self.fetchOTPStep3(
                     start: start,
                     step2URL: step2URL,
                     secretCode: secretCode,
+                    ppppp: ppppp,
                     account: account,
                     game: game,
                     gen: gen,
@@ -625,6 +863,7 @@ final class BeanfunClient {
         start: GameStartData,
         step2URL: URL,
         secretCode: String,
+        ppppp: String,
         account: GameAccount,
         game: GameDefinition,
         gen: UInt64,
@@ -676,6 +915,7 @@ final class BeanfunClient {
                     start: start,
                     step2URL: step2URL,
                     secretCode: secretCode,
+                    ppppp: ppppp,
                     account: account,
                     game: game,
                     gen: gen,
@@ -689,6 +929,7 @@ final class BeanfunClient {
         start: GameStartData,
         step2URL: URL,
         secretCode: String,
+        ppppp: String,
         account: GameAccount,
         game: GameDefinition,
         gen: UInt64,
@@ -702,7 +943,7 @@ final class BeanfunClient {
                 query: [
                     "meth": "GetResultByLongPolling",
                     "key": start.longPollingKey,
-                    "_": String(Int(Date().timeIntervalSince1970 * 1000)),
+                    "_": Self.loginTimestamp(),
                 ]
             )
         } catch {
@@ -719,13 +960,23 @@ final class BeanfunClient {
             }
         }
         log("  LongPolling 已開始；主流程繼續")
-        fetchOTPStep5(start: start, step2URL: step2URL, secretCode: secretCode, account: account, game: game, gen: gen, completion: completion)
+        fetchOTPStep5(
+            start: start,
+            step2URL: step2URL,
+            secretCode: secretCode,
+            ppppp: ppppp,
+            account: account,
+            game: game,
+            gen: gen,
+            completion: completion
+        )
     }
 
     private func fetchOTPStep5(
         start: GameStartData,
         step2URL: URL,
         secretCode: String,
+        ppppp: String,
         account: GameAccount,
         game: GameDefinition,
         gen: UInt64,
@@ -736,19 +987,17 @@ final class BeanfunClient {
             finish(completion, .failure(BeanfunError.expired(BeanfunError.defaultExpiredMessage)))
             return
         }
-        guard let otpURL = try? url(
-            "https://\(Self.host)/beanfun_block/generic_handlers/get_webstart_otp.ashx",
-            query: [
-                "SN": start.longPollingKey,
-                "WebToken": webToken,
-                "SecretCode": secretCode,
-                "ppppp": Self.ppppp,
-                "ServiceCode": game.serviceCode,
-                "ServiceRegion": game.serviceRegion,
-                "ServiceAccount": start.accountID,
-                "CreateTime": start.createTime,
-                "d": String(Int(Date().timeIntervalSince1970 * 1000)),
-            ]
+        guard let otpURL = try? BeanfunWebStartOTP.makeURL(
+            host: Self.host,
+            sn: start.longPollingKey,
+            webToken: webToken,
+            secretCode: secretCode,
+            ppppp: ppppp,
+            serviceCode: game.serviceCode,
+            serviceRegion: game.serviceRegion,
+            serviceAccount: start.accountID,
+            createTime: start.createTime,
+            d: BeanfunWebStartOTP.cacheBuster()
         ) else {
             finish(completion, .failure(BeanfunError.invalidURL("get_webstart_otp.ashx")))
             return
@@ -853,6 +1102,7 @@ final class BeanfunClient {
             )
             let guardValue = encodedGuard.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
                 ?? encodedGuard
+            let ggmData = BeanfunWebStartOTP.launchObject(from: page)?.data ?? ""
             return GameStartData(
                 longPollingKey: key,
                 accountID: accountID,
@@ -860,7 +1110,8 @@ final class BeanfunClient {
                 displayName: displayName,
                 createTime: createTime,
                 guardName: guardName,
-                guardValue: guardValue
+                guardValue: guardValue,
+                ggmData: ggmData
             )
         } catch {
             let lower = page.lowercased()

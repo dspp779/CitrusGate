@@ -39,7 +39,13 @@ enum CoreTests {
         try testClassicUpdateStatusEnum()
         try testClientUpdateUIHelpers()
         try testNexonPlugHandlerStatus()
-        print("CoreTests: 36 tests passed")
+        try testWebStartOTPQueryMatchesWPFOrder()
+        try testWebStartOTPCacheBusterIsInt32()
+        try testWebStartOTPExtractsPPPPPFromPage()
+        try testGGMLaunchTicketURI()
+        try testGGMWebStartPathResolution()
+        try testGGMDecryptLaunchData()
+        print("CoreTests: 42 tests passed")
     }
 
 
@@ -959,6 +965,257 @@ enum CoreTests {
                 selfBundleID: "local.ogom.beanfunotp.legacy"
             ),
             "Legacy same Bundle ID → bound"
+        )
+    }
+
+    private static func testWebStartOTPQueryMatchesWPFOrder() throws {
+        let url = try BeanfunWebStartOTP.makeURL(
+            host: "tw.beanfun.com",
+            sn: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            webToken: "WEBTOKEN",
+            secretCode: "SECRET",
+            ppppp: "1F552AEAFF976018F942B13690C990F60ED01510DDF89165F1658CCE7BC21DBA",
+            serviceCode: "610074",
+            serviceRegion: "T9",
+            serviceAccount: "T9ACCOUNT",
+            createTime: "2010-01-01 12:00:00",
+            d: "1750000000000"
+        )
+        try expect(
+            url.absoluteString == "https://tw.beanfun.com/beanfun_block/generic_handlers/get_webstart_otp.ashx?SN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&WebToken=WEBTOKEN&SecretCode=SECRET&ppppp=1F552AEAFF976018F942B13690C990F60ED01510DDF89165F1658CCE7BC21DBA&ServiceCode=610074&ServiceRegion=T9&ServiceAccount=T9ACCOUNT&CreateTime=2010-01-01%2012:00:00&d=1750000000000",
+            "OTP query must keep WPF parameter order and encode CreateTime space as %20, got \(url.absoluteString)"
+        )
+
+        let plusURL = try BeanfunWebStartOTP.makeURL(
+            host: "tw.beanfun.com",
+            sn: "lpk",
+            webToken: "WEB+TOKEN",
+            secretCode: "SEC",
+            ppppp: "PP",
+            serviceCode: "610074",
+            serviceRegion: "T9",
+            serviceAccount: "SID",
+            createTime: "2024-01-15 12:34:56",
+            d: "1"
+        )
+        try expect(
+            plusURL.absoluteString.contains("CreateTime=2024-01-15%2012:34:56"),
+            "CreateTime space must be %20, got \(plusURL.absoluteString)"
+        )
+        try expect(
+            !plusURL.absoluteString.contains("CreateTime=2024-01-15+12:34:56"),
+            "CreateTime must not use + for space, got \(plusURL.absoluteString)"
+        )
+        try expect(
+            plusURL.absoluteString.contains("?SN=lpk&WebToken="),
+            "query must start with SN then WebToken, got \(plusURL.absoluteString)"
+        )
+    }
+
+    private static func testWebStartOTPCacheBusterIsInt32() throws {
+        let unixMillis = 1_786_937_969_703
+        let date = Date(timeIntervalSince1970: TimeInterval(unixMillis) / 1000)
+        let d = BeanfunWebStartOTP.cacheBuster(at: date)
+        let expected = String(Int32(truncatingIfNeeded: unixMillis))
+        try expect(d == expected, "d must wrap like Environment.TickCount, expected \(expected) got \(d)")
+        try expect(d != String(unixMillis), "d must not be 13-digit unix millis")
+        try expect((Int32(d) != nil), "d must parse as Int32, got \(d)")
+    }
+
+    private static func testWebStartOTPExtractsPPPPPFromPage() throws {
+        let fallback = "1F552AEAFF976018F942B13690C990F60ED01510DDF89165F1658CCE7BC21DBA"
+        let pagePPPPP = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        let page = """
+        var url = "get_webstart_otp.ashx?SN=" + key + "&ppppp=\(pagePPPPP)&ServiceCode=610074";
+        """
+        try expect(
+            BeanfunWebStartOTP.ppppp(from: page, fallback: fallback) == pagePPPPP,
+            "should prefer ppppp embedded in step2 HTML"
+        )
+        try expect(
+            BeanfunWebStartOTP.ppppp(from: "<html></html>", fallback: fallback) == fallback,
+            "should keep hardcoded fallback when page has no ppppp"
+        )
+        let hints = BeanfunWebStartOTP.pageHints(from: #"<script src="/js/game.js"></script><a href="foo.ashx?x=1">"#)
+        try expect(hints.contains { $0.hasPrefix("HTML ") }, "should log HTML size, got \(hints)")
+        try expect(hints.contains("script /js/game.js"), "should list script src, got \(hints)")
+        try expect(hints.contains { $0.contains("foo.ashx") }, "should list ashx, got \(hints)")
+        try expect(hints.contains("沒有 get_webstart_otp"), "should note missing OTP endpoint")
+        try expect(hints.contains("沒有 GGM.LaunchGame"), "should note missing GGM launch")
+
+        let ggmPage = """
+        <script src="/beanfun_block/game_zone/scripts/ggm.js?0817"></script>
+        <script>
+        GGM.LaunchGame({region:'T9', sn:'610074', webToken:'34b9d2e5f1874440aa3a4fa5461b8108', secretCode:'aabb', data:'ServiceCode=610074&&&&CreateTime=2026-07-17 18:15:20'});
+        </script>
+        """
+        let ggmHints = BeanfunWebStartOTP.pageHints(from: ggmPage)
+        try expect(ggmHints.contains("含 GGM.LaunchGame"), "should detect GGM.LaunchGame, got \(ggmHints)")
+        try expect(ggmHints.contains { $0.contains("片段") && $0.contains("LaunchGame") }, "should include LaunchGame snippet, got \(ggmHints)")
+        try expect(!ggmHints.contains { $0.contains("34b9d2e5f1874440aa3a4fa5461b8108") }, "must redact webToken hex, got \(ggmHints)")
+
+        let dataPage = """
+        var MyAccountData = { ServiceCode: "610074" };
+        var m_objData = { region: MyAccountData.ServiceRegion, sn: MyAccountData.ServiceCode, data: "x" };
+        var supportService = "610074";
+        function StartGame() { LaunchGame(); }
+        """
+        let dataHints = BeanfunWebStartOTP.pageHints(from: dataPage)
+        try expect(dataHints.contains { $0.contains("MyAccountData 欄位") && $0.contains("ServiceRegion") }, "should list MyAccountData fields, got \(dataHints)")
+        try expect(dataHints.contains { $0.contains("m_objData 欄位") && $0.contains("region") }, "should list m_objData fields, got \(dataHints)")
+        try expect(dataHints.contains { $0.contains("片段") && $0.contains("m_objData") }, "should include m_objData snippet, got \(dataHints)")
+
+        let jsonPage = """
+        var supportService = ['610074'];
+        var m_objData = { "region": "TW;Production", "sn": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "data": "ABCDEF0123456789ABCDEF0123456789FF" };
+        """
+        let launch = BeanfunWebStartOTP.launchObject(from: jsonPage)
+        try expect(launch?.region == "TW;Production", "should parse GGM region, got \(String(describing: launch))")
+        try expect(launch?.sn == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "should parse GGM sn")
+        try expect(launch?.data.count == 34, "should parse GGM data, got \(launch?.data.count ?? -1)")
+        let jsonHints = BeanfunWebStartOTP.pageHints(from: jsonPage)
+        try expect(
+            jsonHints.contains { $0.contains("m_objData region=TW;Production") && $0.contains("data=34 chars") },
+            "should summarize m_objData data length, got \(jsonHints)"
+        )
+        try expect(
+            !jsonHints.contains { $0.contains("ABCDEF0123456789ABCDEF0123456789FF") },
+            "must not dump GGM data blob, got \(jsonHints)"
+        )
+        try expect(
+            BeanfunWebStartOTP.ggmCommand(serviceCode: "610074", html: jsonPage) == "06006",
+            "MapleStory should use SmartLaunch Cmd 06006"
+        )
+        try expect(
+            BeanfunWebStartOTP.ggmCommand(serviceCode: "999999", html: jsonPage) == "06004",
+            "unsupported service should use LaunchGame Cmd 06004"
+        )
+    }
+
+    private static func testGGMLaunchTicketURI() throws {
+        let ticket = GGMLaunchTicket(
+            region: "TW;Production",
+            sn: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            command: "06006",
+            data: "ABCDEF0123456789"
+        )
+        try expect(
+            ticket.uri == "gamaniagames://Region=TW;Production&&&&SN=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&&&&Cmd=06006&&&&Data=ABCDEF0123456789",
+            "GGM URI must keep semicolon and &&&&, got \(ticket.uri)"
+        )
+        try expect(!ticket.uri.contains("%3B"), "Region semicolon must not be percent-encoded")
+        let command = ticket.cyderOpenCommand(webStartPath: "/tmp/GGMWebStart.exe")
+        try expect(
+            command.hasPrefix("open -n -b 'local.cyder.app' '/tmp/GGMWebStart.exe' --args '"),
+            "Cyder command prefix mismatch, got \(command)"
+        )
+        try expect(command.hasSuffix("'"), "URI must be a single quoted argv")
+        try expect(command.contains(ticket.uri), "Cyder command must embed the raw URI")
+        let args = BeanfunWebStartOTP.openArguments(
+            uri: ticket.uri,
+            webStartPath: "/tmp/GGMWebStart.exe"
+        )
+        try expect(
+            args == [
+                "-n",
+                "-b",
+                "local.cyder.app",
+                "/tmp/GGMWebStart.exe",
+                "--args",
+                ticket.uri,
+            ],
+            "GGM open argv must use official Cyder and a single URI, got \(args)"
+        )
+    }
+
+    private static func testGGMWebStartPathResolution() throws {
+        try expect(
+            BeanfunWebStartOTP.defaultWebStartPath.hasSuffix(
+                "gamania Games/gamania Games Manager/GGMWebStart.exe"
+            ),
+            "default path must point at GGMWebStart.exe in the Cyder shared bottle"
+        )
+        try expect(
+            BeanfunWebStartOTP.defaultWebStartPath.contains(
+                "Library/Application Support/Cyder/bottles/shared/drive_c"
+            ),
+            "default path must live under Cyder bottles/shared/drive_c"
+        )
+        try expect(
+            BeanfunWebStartOTP.resolvedWebStartPath(stored: "")
+                == BeanfunWebStartOTP.defaultWebStartPath,
+            "empty stored path must fall back to the Cyder default"
+        )
+        try expect(
+            BeanfunWebStartOTP.resolvedWebStartPath(stored: "   ")
+                == BeanfunWebStartOTP.defaultWebStartPath,
+            "whitespace stored path must fall back to the Cyder default"
+        )
+        try expect(
+            BeanfunWebStartOTP.resolvedWebStartPath(stored: "/custom/GGMWebStart.exe")
+                == "/custom/GGMWebStart.exe",
+            "non-empty stored path must win over the default"
+        )
+        let help = BeanfunWebStartOTP.webStartPathFinderHelp
+        try expect(help.contains("GGMWebStart.exe"), "help must name the executable")
+        try expect(help.contains("Cyder"), "help must mention Cyder")
+        try expect(
+            help.contains("bottles/shared/drive_c"),
+            "help must include the default bottle relative path"
+        )
+        try expect(
+            help.contains("MapleStory.exe") == false
+                || help.contains("不要選 MapleStory.exe"),
+            "help must warn against picking MapleStory.exe"
+        )
+        let missing = BeanfunWebStartOTP.missingWebStartPathDescription(
+            path: "/missing/GGMWebStart.exe"
+        )
+        try expect(
+            missing.contains("/missing/GGMWebStart.exe"),
+            "missing-path error must include the tried path"
+        )
+        try expect(
+            missing.contains("GGMWebStart.exe"),
+            "missing-path error must mention GGMWebStart.exe"
+        )
+        try expect(
+            missing.contains(BeanfunWebStartOTP.webStartPathFinderHelp),
+            "missing-path error must include finder help"
+        )
+    }
+
+    private static func testGGMDecryptLaunchData() throws {
+        let fixture =
+            "5ecca7da791bc4d2d4242d4ab791496d40461fc82c9e5983156690d28c9e5983156690d28c9e5983156690d28c9e5983156690d28c9e5983156690d28c9e5983156690d28c9e5983156690d286966d884d481ec8c68ff1f373a8bbac53843942bfb54ff0482dacc4a08e6f858994bf676a0e0061a9efee5de668edd41"
+        let expectedTicket = String(repeating: "a", count: 64)
+        let params = try GGMDataParam.decryptParam(fixture)
+        let keyLens = params.map { "\($0.key):\($0.value.count)" }.sorted().joined(separator: ",")
+        try expect(
+            Array(params.keys).sorted() == ["LaunchTicket", "ServiceCode", "ServiceRegion"],
+            "param keys/lens \(keyLens)"
+        )
+        let actualTicket = params["LaunchTicket"] ?? ""
+        try expect(
+            actualTicket == expectedTicket,
+            "LaunchTicket mismatch len=\(actualTicket.count) hex=\(actualTicket.allSatisfy(\.isHexDigit))"
+        )
+        try expect(params["ServiceCode"] == "610074", "ServiceCode mismatch")
+        try expect(params["ServiceRegion"] == "T9", "ServiceRegion mismatch")
+        let ticket = try GGMDataParam.launchTicket(from: fixture)
+        try expect(ticket == expectedTicket, "launchTicket helper")
+        let expectedSN = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        let otp = try GGMDataParam.decryptOTPEnvelope("12345678897923ff842ec7e73d7595a98bff809d")
+        try expect(otp == "OTP12345", "otp_v2 envelope decrypt")
+        let body = BeanfunWebStartOTP.otpV2RequestBody(
+            sn: expectedSN,
+            launchTicket: expectedTicket,
+            hash: String(repeating: "b", count: 64)
+        )
+        let json = String(data: body, encoding: .utf8) ?? ""
+        try expect(
+            json == "{\"SN\":\"\(expectedSN)\",\"LaunchTicket\":\"\(expectedTicket)\",\"CV\":\"1.5.0.2\",\"Hash\":\"\(String(repeating: "b", count: 64))\",\"arch\":\"x64\"}",
+            "otp_v2 JSON key order, got \(json)"
         )
     }
 

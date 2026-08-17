@@ -303,6 +303,7 @@ struct GameStartData {
     let createTime: String
     let guardName: String
     let guardValue: String
+    let ggmData: String
 }
 
 enum BeanfunError: LocalizedError {

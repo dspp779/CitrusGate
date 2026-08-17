@@ -409,31 +409,77 @@ struct ContentView: View {
                     VStack(spacing: 10) {
                         if model.selectedGame?.id == GameDefinition.mapleStory.id {
                             VStack(spacing: 10) {
-                                HStack(spacing: 10) {
-                                    Button {
-                                        model.launchSelectedAccountViaOpen()
-                                    } label: {
-                                        Label("開啟", systemImage: "play.fill")
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .disabled(model.areLaunchButtonsDisabled)
-
-                                    Button {
-                                        model.launchSelectedAccountViaCyder()
-                                    } label: {
-                                        Label("以 Cyder 開啟", systemImage: "shippingbox")
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .disabled(model.areLaunchButtonsDisabled)
-                                }
+                                Text("測試版啟動方式")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
 
                                 Button {
-                                    model.launchSelectedAccountViaWine()
+                                    model.launchSelectedAccountViaNativeOTPCyder()
                                 } label: {
-                                    Label("以 MapleStory Launcher 開啟", systemImage: "wineglass")
+                                    Label("開啟", systemImage: "play.fill")
                                 }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.borderedProminent)
                                 .disabled(model.areLaunchButtonsDisabled)
+
+                                Text("離線解密 Data → POST otp_v2 → Cyder 開 MapleStory.exe")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                Button {
+                                    model.launchSelectedAccountViaGGMScheme()
+                                } label: {
+                                    Label("開啟 gamaniagames://", systemImage: "link.circle.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.areLaunchButtonsDisabled)
+
+                                Text("取得 scheme URI 後 open 交給已註冊 handler（Cyder）")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                DisclosureGroup("其他啟動方式") {
+                                    VStack(spacing: 10) {
+                                        Button {
+                                            model.launchSelectedAccountViaGGM()
+                                        } label: {
+                                            Label("以 GGMWebStart.exe 啟動", systemImage: "square.stack.3d.up.fill")
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .disabled(model.areLaunchButtonsDisabled)
+
+                                        GGMWebStartPathCaption(model: model)
+
+                                        HStack(spacing: 10) {
+                                            Button {
+                                                model.launchSelectedAccountViaOpen()
+                                            } label: {
+                                                Label("開啟", systemImage: "play.fill")
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .disabled(model.areLaunchButtonsDisabled)
+
+                                            Button {
+                                                model.launchSelectedAccountViaCyder()
+                                            } label: {
+                                                Label("以 Cyder 開啟", systemImage: "shippingbox")
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .disabled(model.areLaunchButtonsDisabled)
+                                        }
+
+                                        Button {
+                                            model.launchSelectedAccountViaWine()
+                                        } label: {
+                                            Label("以 MapleStory Launcher 開啟", systemImage: "wineglass")
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .disabled(model.areLaunchButtonsDisabled)
+                                    }
+                                    .padding(.top, 6)
+                                }
                             }
                         } else {
                             HStack(spacing: 10) {
@@ -530,6 +576,7 @@ struct ContentView: View {
                     .controlSize(.large)
                     .disabled(model.selectedAccount == nil || model.isBusy)
                 }
+                GGMLaunchSection(model: model)
             }
             .padding()
         }
@@ -656,6 +703,8 @@ struct ContentView: View {
                 .padding(10)
             }
 
+            GGMLaunchSection(model: model)
+
             GroupBox("開啟遊戲") {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("使用 macOS 的 open -n 依預設 App 或指定 Cyder 開啟 .exe。檔案位置會自動記住。")
@@ -722,7 +771,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                 }
-                .frame(height: 160)
+                .frame(height: 240)
                 .background(Color.black.opacity(0.88))
                 .foregroundStyle(.green.opacity(0.9))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -736,6 +785,123 @@ struct ContentView: View {
         .padding(10)
         .background(Color.secondary.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct GGMLaunchSection: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        if model.selectedGame?.id == GameDefinition.mapleStory.id {
+            GroupBox("gamania Games Manager") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("以 Cyder 開啟 GGMWebStart.exe。Games Manager 會自行向 Beanfun 取 OTP 並啟動新楓之谷；票券一次性，請取得後立刻啟動。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        TextField("GGMWebStart.exe 位置", text: $model.ggmWebStartPath)
+                            .textFieldStyle(.roundedBorder)
+                        Button("選擇…") { model.chooseGGMWebStart() }
+                    }
+                    if model.hasValidGGMWebStart {
+                        Text("目前：\(model.resolvedGGMWebStartPath)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    } else {
+                        Text("找不到這個檔。請依下方說明選取 GGMWebStart.exe。")
+                            .font(.caption.bold())
+                            .foregroundStyle(.orange)
+                    }
+                    DisclosureGroup("如何找到 GGMWebStart.exe") {
+                        Text(BeanfunWebStartOTP.webStartPathFinderHelp)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .padding(.top, 4)
+                    }
+                    if let ticket = model.ggmLaunchTicket {
+                        Text("Region=\(ticket.region)  SN=\(ticket.sn)  Cmd=\(ticket.command)  Data=\(ticket.data.count) chars")
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                        ScrollView {
+                            Text(ticket.uri)
+                                .font(.system(size: 11, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(minHeight: 72, maxHeight: 140)
+                        HStack {
+                            Button { model.copyGGMURI() } label: {
+                                Label("複製 gamaniagames URI", systemImage: "link")
+                            }
+                            Button { model.copyGGMSchemeCommand() } label: {
+                                Label("複製 open 指令", systemImage: "terminal")
+                            }
+                            Button { model.copyGGMCyderCommand() } label: {
+                                Label("複製 GGMWebStart 指令", systemImage: "terminal.fill")
+                            }
+                        }
+                    }
+                    HStack {
+                        Spacer()
+                        Button {
+                            model.launchSelectedAccountViaGGMScheme()
+                        } label: {
+                            Label("開啟 gamaniagames://", systemImage: "link.circle.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.areLaunchButtonsDisabled || model.selectedAccount == nil)
+
+                        Button {
+                            if model.ggmLaunchTicket == nil {
+                                model.launchSelectedAccountViaGGM()
+                            } else {
+                                model.launchViaGGM()
+                            }
+                        } label: {
+                            Label("以 GGMWebStart.exe 啟動", systemImage: "square.stack.3d.up.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.areLaunchButtonsDisabled || model.selectedAccount == nil)
+                    }
+                }
+                .padding(10)
+            }
+        }
+    }
+}
+
+private struct GGMWebStartPathCaption: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(spacing: 4) {
+            if model.hasValidGGMWebStart {
+                Text("GGMWebStart：\(model.resolvedGGMWebStartPath)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("尚未找到 GGMWebStart.exe")
+                    .font(.caption.bold())
+                    .foregroundStyle(.orange)
+            }
+            Button("選擇 GGMWebStart.exe…") {
+                model.chooseGGMWebStart()
+            }
+            .buttonStyle(.link)
+            DisclosureGroup("如何找到 GGMWebStart.exe") {
+                Text(BeanfunWebStartOTP.webStartPathFinderHelp)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .multilineTextAlignment(.leading)
+                    .padding(.top, 4)
+            }
+            .font(.caption)
+        }
     }
 }
 

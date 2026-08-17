@@ -15,12 +15,16 @@ final class AppModel: ObservableObject {
     private enum PendingLaunchKind {
         case defaultOpen
         case cyderApp
+        case nativeOTPCyder
         case mapleStoryWine
+        case ggmWebStart
+        case ggmSchemeViaCyder
     }
 
     private static let legacyMapleStoryPathKey = "MapleStoryExecutablePath"
     private static let executablePathPrefix = "ExecutablePath."
     private static let advancedLaunchCommandStyleKey = "AdvancedLaunchCommandStyle"
+    private static let ggmWebStartPathKey = "GGMWebStartPath"
     private static let officialNexonPlugAppPath =
         "/Library/Application Support/Nexon/Plug/NexonPlug.app"
     private static let nexonPlugScheme = "NexonPlug"
@@ -52,6 +56,7 @@ final class AppModel: ObservableObject {
     @Published var accounts: [GameAccount] = []
     @Published var selectedAccountID: String?
     @Published var otp: OTPResult?
+    @Published var ggmLaunchTicket: GGMLaunchTicket?
     @Published var otpSecondsRemaining = 0
     @Published var autoRefresh = false
     @Published var autoRefreshInterval = 60
@@ -67,6 +72,11 @@ final class AppModel: ObservableObject {
         didSet {
             guard let selectedGame else { return }
             defaults.set(executablePath, forKey: executablePathKey(for: selectedGame))
+        }
+    }
+    @Published var ggmWebStartPath: String {
+        didSet {
+            defaults.set(ggmWebStartPath, forKey: Self.ggmWebStartPathKey)
         }
     }
     @Published var advancedLaunchCommandStyle: AdvancedLaunchCommandStyle {
@@ -100,9 +110,14 @@ final class AppModel: ObservableObject {
     private var classicUpdateCheckTask: Task<Void, Never>?
     private static let launchCooldownNanoseconds: UInt64 = 10_000_000_000
     private var pendingLaunchKind: PendingLaunchKind = .defaultOpen
-    private lazy var client = BeanfunClient { [weak self] message in
-        self?.appendLog(message)
-    }
+    private lazy var client = BeanfunClient(
+        log: { [weak self] message in
+            self?.appendLog(message)
+        },
+        ggmLaunch: { [weak self] ticket in
+            self?.ggmLaunchTicket = ticket
+        }
+    )
     private lazy var nxdlDownloader = NxdlDownloader { [weak self] message in
         self?.appendLog(message)
     }
@@ -111,6 +126,8 @@ final class AppModel: ObservableObject {
         self.defaults = defaults
         selectedGameID = nil
         executablePath = ""
+        let storedGGMPath = defaults.string(forKey: Self.ggmWebStartPathKey) ?? ""
+        ggmWebStartPath = BeanfunWebStartOTP.resolvedWebStartPath(stored: storedGGMPath)
         if defaults.string(forKey: Self.executablePathPrefix + GameDefinition.mapleStory.id) == nil,
            let legacyPath = defaults.string(forKey: Self.legacyMapleStoryPathKey),
            !legacyPath.isEmpty {
@@ -246,6 +263,7 @@ final class AppModel: ObservableObject {
         accounts = []
         selectedAccountID = nil
         otp = nil
+        ggmLaunchTicket = nil
         launchedAccountID = nil
         qrImage = nil
         logText = ""
@@ -321,6 +339,7 @@ final class AppModel: ObservableObject {
         selectedAccountID = account.id
         launchedAccountID = nil
         otp = nil
+        ggmLaunchTicket = nil
     }
 
     private func retrieveOTP(launchWhenReady: Bool) {
@@ -334,6 +353,7 @@ final class AppModel: ObservableObject {
         }
         otpTask?.cancel()
         otpCountdownTask?.cancel()
+        ggmLaunchTicket = nil
         client.includeSecrets = includeSecrets
         isBusy = true
         statusMessage = "正在取得 \(account.displayName) 的 OTP…"
@@ -352,8 +372,14 @@ final class AppModel: ObservableObject {
                     case .cyderApp:
                         guard let game = selectedGame else { return }
                         launchViaOpen(launcher: .cyder(for: game))
+                    case .nativeOTPCyder:
+                        launchViaOpen(launcher: .cyder)
                     case .mapleStoryWine:
                         launchViaMapleStoryLauncherWine()
+                    case .ggmWebStart:
+                        launchViaGGM()
+                    case .ggmSchemeViaCyder:
+                        launchViaGamaniagamesScheme()
                     }
                 } else {
                     screen = .otp
@@ -365,6 +391,22 @@ final class AppModel: ObservableObject {
             } catch BeanfunError.cancelled {
                 isBusy = false
             } catch {
+                if launchWhenReady, ggmLaunchTicket != nil {
+                    switch pendingLaunchKind {
+                    case .ggmWebStart:
+                        appendLog("OTP 失敗，改以 Games Manager 啟動：\(error.localizedDescription)")
+                        isBusy = false
+                        launchViaGGM()
+                        return
+                    case .ggmSchemeViaCyder:
+                        appendLog("OTP 失敗，改以 gamaniagames scheme 啟動：\(error.localizedDescription)")
+                        isBusy = false
+                        launchViaGamaniagamesScheme()
+                        return
+                    default:
+                        break
+                    }
+                }
                 present(error)
             }
         }
@@ -409,6 +451,24 @@ final class AppModel: ObservableObject {
         statusMessage = "啟動指令已複製"
     }
 
+    func copyGGMURI() {
+        guard let value = ggmLaunchTicket?.uri else { return }
+        copy(value)
+        statusMessage = "GGM URI 已複製"
+    }
+
+    func copyGGMCyderCommand() {
+        guard let ticket = ggmLaunchTicket else { return }
+        copy(ticket.cyderOpenCommand(webStartPath: resolvedGGMWebStartPath))
+        statusMessage = "GGM Cyder 指令已複製"
+    }
+
+    func copyGGMSchemeCommand() {
+        guard let ticket = ggmLaunchTicket else { return }
+        copy(ticket.schemeOpenCommand())
+        statusMessage = "gamaniagames open 指令已複製"
+    }
+
     func copyDebugLog() {
         copy(logText)
         statusMessage = "Debug log 已複製"
@@ -436,6 +496,40 @@ final class AppModel: ObservableObject {
         statusMessage = "已記住\(game.name)主程式位置"
     }
 
+    func chooseGGMWebStart() {
+        let panel = NSOpenPanel()
+        panel.title = "選擇 GGMWebStart.exe"
+        panel.message = "從 Cyder bottle 的 drive_c／Program Files／gamania Games／gamania Games Manager 選擇 GGMWebStart.exe"
+        panel.prompt = "選擇"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [UTType(filenameExtension: "exe") ?? .data]
+        panel.directoryURL = ggmWebStartPanelDirectory()
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let name = url.lastPathComponent.lowercased()
+        guard name == "ggmwebstart.exe" else {
+            errorMessage = "請選擇 GGMWebStart.exe，不要選 MapleStory.exe"
+            return
+        }
+        ggmWebStartPath = url.path
+        statusMessage = "已記住 GGMWebStart.exe 位置"
+    }
+
+    private func ggmWebStartPanelDirectory() -> URL? {
+        let resolved = URL(fileURLWithPath: resolvedGGMWebStartPath)
+        let managerFolder = resolved.deletingLastPathComponent()
+        if FileManager.default.fileExists(atPath: managerFolder.path) {
+            return managerFolder
+        }
+        let bottles = NSHomeDirectory() + "/Library/Application Support/Cyder/bottles"
+        if FileManager.default.fileExists(atPath: bottles) {
+            return URL(fileURLWithPath: bottles)
+        }
+        return nil
+    }
+
     /// Deprecated alias kept for the advanced-mode launch button.
     func launchGame() {
         launchViaOpen()
@@ -451,8 +545,49 @@ final class AppModel: ObservableObject {
         launchSelectedAccount()
     }
 
+    /// Native otp_v2 (offline DecryptParam + POST v2) then Cyder opens MapleStory.exe.
+    func launchSelectedAccountViaNativeOTPCyder() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else {
+            errorMessage = "原生 OTP 啟動僅支援新楓之谷"
+            return
+        }
+        guard CyderInstallation.isOfficialCyderInstalled() else {
+            errorMessage = "請先安裝 Cyder 正式版。"
+            return
+        }
+        pendingLaunchKind = .nativeOTPCyder
+        launchSelectedAccount()
+    }
+
+    /// Fetch launch ticket then `open gamaniagames://…` (system scheme handler).
+    func launchSelectedAccountViaGGMScheme() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else {
+            errorMessage = "gamaniagames 啟動僅支援新楓之谷"
+            return
+        }
+        pendingLaunchKind = .ggmSchemeViaCyder
+        launchSelectedAccount()
+    }
+
     func launchSelectedAccountViaWine() {
         pendingLaunchKind = .mapleStoryWine
+        launchSelectedAccount()
+    }
+
+    func launchSelectedAccountViaGGM() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else {
+            errorMessage = "Games Manager 啟動僅支援新楓之谷"
+            return
+        }
+        guard CyderInstallation.isOfficialCyderInstalled() else {
+            errorMessage = "請先安裝 Cyder 正式版，才能啟動 gamania Games Manager。"
+            return
+        }
+        guard validatedGGMWebStartPath() != nil else {
+            chooseGGMWebStart()
+            return
+        }
+        pendingLaunchKind = .ggmWebStart
         launchSelectedAccount()
     }
 
@@ -536,6 +671,116 @@ final class AppModel: ObservableObject {
         launchViaOpen(launcher: .cyder(for: game))
     }
 
+    func launchViaGGM() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else {
+            errorMessage = "Games Manager 啟動僅支援新楓之谷"
+            return
+        }
+        guard let ticket = ggmLaunchTicket else {
+            errorMessage = "尚未取得 Games Manager 啟動參數，請再試一次"
+            return
+        }
+        guard CyderInstallation.isOfficialCyderInstalled() else {
+            errorMessage = "請先安裝 Cyder 正式版，才能啟動 gamania Games Manager。"
+            return
+        }
+        guard let path = validatedGGMWebStartPath() else { return }
+
+        do {
+            try clearQuarantineIfNeeded(at: path)
+        } catch {
+            present(error)
+            return
+        }
+
+        launchedAccountID = nil
+        beginLaunchUI()
+
+        let process = Process()
+        let standardError = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = BeanfunWebStartOTP.openArguments(uri: ticket.uri, webStartPath: path)
+        process.standardError = standardError
+        process.terminationHandler = { [weak self] process in
+            let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
+            let errorText = String(data: errorData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            Task { @MainActor in
+                guard let self else { return }
+                self.isBusy = false
+                if process.terminationStatus == 0 {
+                    self.statusMessage = "已透過 Games Manager 啟動新楓之谷"
+                    self.appendLog("執行 open -n：GGMWebStart=\(path) SN=\(ticket.sn) Cmd=\(ticket.command)")
+                    self.markLaunchSucceeded()
+                } else {
+                    let message = errorText.flatMap { $0.isEmpty ? nil : $0 }
+                        ?? "open 結束代碼 \(process.terminationStatus)"
+                    self.markLaunchFailed()
+                    self.present(BeanfunError.rejected(message))
+                }
+            }
+        }
+
+        isBusy = true
+        statusMessage = "正在以 Games Manager 啟動新楓之谷…"
+        do {
+            try process.run()
+        } catch {
+            isBusy = false
+            markLaunchFailed()
+            present(error)
+        }
+    }
+
+    func launchViaGamaniagamesScheme() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else {
+            errorMessage = "gamaniagames 啟動僅支援新楓之谷"
+            return
+        }
+        guard let ticket = ggmLaunchTicket else {
+            errorMessage = "尚未取得 gamaniagames 啟動參數，請再試一次"
+            return
+        }
+
+        launchedAccountID = nil
+        beginLaunchUI()
+
+        let process = Process()
+        let standardError = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = BeanfunWebStartOTP.openSchemeArguments(uri: ticket.uri)
+        process.standardError = standardError
+        process.terminationHandler = { [weak self] process in
+            let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
+            let errorText = String(data: errorData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            Task { @MainActor in
+                guard let self else { return }
+                self.isBusy = false
+                if process.terminationStatus == 0 {
+                    self.statusMessage = "已開啟 gamaniagames://"
+                    self.appendLog("執行 open -n：gamaniagames SN=\(ticket.sn) Cmd=\(ticket.command)")
+                    self.markLaunchSucceeded()
+                } else {
+                    let message = errorText.flatMap { $0.isEmpty ? nil : $0 }
+                        ?? "open 結束代碼 \(process.terminationStatus)"
+                    self.markLaunchFailed()
+                    self.present(BeanfunError.rejected(message))
+                }
+            }
+        }
+
+        isBusy = true
+        statusMessage = "正在開啟 gamaniagames://…"
+        do {
+            try process.run()
+        } catch {
+            isBusy = false
+            markLaunchFailed()
+            present(error)
+        }
+    }
+
     func launchViaMapleStoryLauncherWine() {
         guard let game = selectedGame, game.id == GameDefinition.mapleStory.id else {
             errorMessage = "MapleStory Launcher 啟動僅支援新楓之谷"
@@ -604,6 +849,25 @@ final class AppModel: ObservableObject {
             return nil
         }
         return (path, account, otp)
+    }
+
+    private func validatedGGMWebStartPath() -> String? {
+        let path = resolvedGGMWebStartPath
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            errorMessage = BeanfunWebStartOTP.missingWebStartPathDescription(path: path)
+            return nil
+        }
+        guard URL(fileURLWithPath: path).pathExtension.lowercased() == "exe" else {
+            errorMessage = "請選擇副檔名為 .exe 的檔案"
+            return nil
+        }
+        guard URL(fileURLWithPath: path).lastPathComponent.lowercased() == "ggmwebstart.exe" else {
+            errorMessage = "請選擇 GGMWebStart.exe，不要選 MapleStory.exe"
+            return nil
+        }
+        return path
     }
 
     private func beginLaunchUI() {
@@ -1223,6 +1487,14 @@ final class AppModel: ObservableObject {
         isValidExecutablePath(normalizedExecutablePath)
     }
 
+    var hasValidGGMWebStart: Bool {
+        isValidExecutablePath(resolvedGGMWebStartPath)
+    }
+
+    var resolvedGGMWebStartPath: String {
+        BeanfunWebStartOTP.resolvedWebStartPath(stored: ggmWebStartPath)
+    }
+
     private var normalizedExecutablePath: String {
         executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -1306,6 +1578,7 @@ final class AppModel: ObservableObject {
         accounts = []
         selectedAccountID = nil
         otp = nil
+        ggmLaunchTicket = nil
         launchedAccountID = nil
         qrImage = nil
         qrSecondsRemaining = 60

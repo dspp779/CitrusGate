@@ -1,5 +1,458 @@
 import AppKit
+import CryptoKit
 import Foundation
+
+/// Builds `get_webstart_otp.ashx` the way Beanfun's WPF client does.
+/// `URLComponents.queryItems` sorts keys and is not byte-identical to the
+/// official `?SN=&WebToken=&SecretCode=&ppppp=...&CreateTime=` template;
+/// Beanfun rejects that with `Query String Error`.
+///
+/// GGM `Region`/`Cmd`/`Data` queries are a 20-byte parse failure (`0;Query
+/// String Error`). Official MapleStory launch now opens `gamaniagames://`
+/// instead of this handler.
+enum BeanfunWebStartOTP {
+    static func makeURL(
+        host: String,
+        sn: String,
+        webToken: String,
+        secretCode: String,
+        ppppp: String,
+        serviceCode: String,
+        serviceRegion: String,
+        serviceAccount: String,
+        createTime: String,
+        d: String
+    ) throws -> URL {
+        let createTimeEncoded = createTime.replacingOccurrences(of: " ", with: "%20")
+        let query = [
+            "SN=\(sn)",
+            "WebToken=\(webToken)",
+            "SecretCode=\(secretCode)",
+            "ppppp=\(ppppp)",
+            "ServiceCode=\(serviceCode)",
+            "ServiceRegion=\(serviceRegion)",
+            "ServiceAccount=\(serviceAccount)",
+            "CreateTime=\(createTimeEncoded)",
+            "d=\(d)",
+        ]
+        let value = "https://\(host)/beanfun_block/generic_handlers/get_webstart_otp.ashx?\(query.joined(separator: "&"))"
+        guard let url = URL(string: value) else { throw BeanfunError.invalidURL(value) }
+        return url
+    }
+
+    /// `ggm.js` format: `gamaniagames://Region=…&&&&SN=…&&&&Cmd=…&&&&Data=…`
+    /// Do not percent-encode `;` in Region; GGM parses the raw string.
+    static func schemeURI(region: String, sn: String, command: String, data: String) -> String {
+        "gamaniagames://Region=\(region)&&&&SN=\(sn)&&&&Cmd=\(command)&&&&Data=\(data)"
+    }
+
+    static var defaultWebStartPath: String {
+        NSHomeDirectory()
+            + "/Library/Application Support/Cyder/bottles/shared/drive_c/Program Files"
+            + "/gamania Games/gamania Games Manager/GGMWebStart.exe"
+    }
+
+    static let webStartPathFinderHelp = """
+    在 Cyder 安裝 gamania Games Manager 後，預設位置是：
+    ~/Library/Application Support/Cyder/bottles/shared/drive_c/Program Files/gamania Games/gamania Games Manager/GGMWebStart.exe
+
+    也可在 Finder 按 ⌘F 搜尋「GGMWebStart.exe」，或按「選擇…」從 Cyder bottle 的 drive_c → Program Files → gamania Games → gamania Games Manager 選取。請選這個檔，不要選 MapleStory.exe。
+    """
+
+    static func resolvedWebStartPath(stored: String) -> String {
+        let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? defaultWebStartPath : trimmed
+    }
+
+    static func missingWebStartPathDescription(path: String) -> String {
+        "找不到 GGMWebStart.exe：\(path)\n\n\(webStartPathFinderHelp)"
+    }
+
+    static func openArguments(uri: String, webStartPath: String) -> [String] {
+        OpenLaunchArguments.build(
+            executablePath: webStartPath,
+            gameArguments: [uri],
+            launcher: .cyder
+        )
+    }
+
+    /// Open `gamaniagames://…` via the system-registered URL scheme handler.
+    static func openSchemeArguments(uri: String) -> [String] {
+        ["-n", uri]
+    }
+
+    static func cyderOpenCommand(
+        uri: String,
+        webStartPath: String = defaultWebStartPath
+    ) -> String {
+        "open -n -b \(LaunchCommandBuilder.shellQuote(OpenLauncher.cyderBundleIdentifier)) "
+            + "\(LaunchCommandBuilder.shellQuote(webStartPath)) "
+            + "--args \(LaunchCommandBuilder.shellQuote(uri))"
+    }
+
+    static func schemeOpenCommand(uri: String) -> String {
+        "open -n \(LaunchCommandBuilder.shellQuote(uri))"
+    }
+
+    static func supportServiceCodes(from html: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"supportService\s*=\s*\[([^\]]+)\]"#),
+              let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+              let innerRange = Range(match.range(at: 1), in: html) else {
+            return []
+        }
+        return String(html[innerRange])
+            .split(separator: ",")
+            .map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+            }
+            .filter { !$0.isEmpty }
+    }
+
+    static func ggmCommand(serviceCode: String, html: String) -> String {
+        supportServiceCodes(from: html).contains(serviceCode) ? "06006" : "06004"
+    }
+
+    static let otpV2URL =
+        "https://tw.beanfun.com/beanfun_block/generic_handlers/get_webstart_otp_v2.ashx"
+
+    static var ggmWebStartDLLPath: String {
+        URL(fileURLWithPath: defaultWebStartPath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("GGMWebStart.dll")
+            .path
+    }
+
+    /// Matches GGM 1.5.0.2 captures; used for `CV` on otp_v2 POST.
+    static let ggmClientVersion = "1.5.0.2"
+
+    static func ggmWebStartDLLHash() throws -> String {
+        let path = ggmWebStartDLLPath
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func otpV2RequestBody(
+        sn: String,
+        launchTicket: String,
+        hash: String,
+        cv: String = ggmClientVersion,
+        arch: String = "x64"
+    ) -> Data {
+        let ordered: [(String, String)] = [
+            ("SN", sn),
+            ("LaunchTicket", launchTicket),
+            ("CV", cv),
+            ("Hash", hash),
+            ("arch", arch),
+        ]
+        let inner = ordered.map { key, value in
+            "\"\(key)\":\"\(value)\""
+        }.joined(separator: ",")
+        return Data("{\(inner)}".utf8)
+    }
+
+    /// WPF `Environment.TickCount`: signed 32-bit millis. Beanfun parses `d`
+    /// as Int32; 13-digit unix millis overflows and returns Query String Error.
+    static func cacheBuster(at date: Date = Date()) -> String {
+        let millis = Int(date.timeIntervalSince1970 * 1000)
+        return String(Int32(truncatingIfNeeded: millis))
+    }
+
+    static func ppppp(from page: String, fallback: String) -> String {
+        let pattern = #"ppppp=([0-9A-Fa-f]{64})"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: page, range: NSRange(page.startIndex..., in: page)),
+              let range = Range(match.range(at: 1), in: page) else {
+            return fallback
+        }
+        return String(page[range])
+    }
+
+    static func pageHints(from html: String) -> [String] {
+        var hints: [String] = []
+        hints.append("HTML \(html.count) chars")
+        if let regex = try? NSRegularExpression(pattern: #"src=["']([^"']+)["']"#, options: .caseInsensitive) {
+            let range = NSRange(html.startIndex..., in: html)
+            for match in regex.matches(in: html, range: range) {
+                guard let valueRange = Range(match.range(at: 1), in: html) else { continue }
+                let src = String(html[valueRange])
+                if src.lowercased().contains(".js") { hints.append("script \(src)") }
+            }
+        }
+        if let regex = try? NSRegularExpression(pattern: #"[A-Za-z0-9_./-]+\.ashx[^"'<\s]*"#) {
+            let range = NSRange(html.startIndex..., in: html)
+            for match in regex.matches(in: html, range: range) {
+                guard let valueRange = Range(match.range, in: html) else { continue }
+                hints.append("ashx \(html[valueRange])")
+            }
+        }
+        let markers = [
+            "get_webstart_otp",
+            "ppppp=",
+            "GGM.LaunchGame",
+            "GGM.SmartLaunch",
+            "gamaniagames://",
+            "StartGame",
+        ]
+        for marker in markers {
+            if html.range(of: marker, options: .caseInsensitive) == nil {
+                hints.append("沒有 \(marker)")
+            } else {
+                hints.append("含 \(marker)")
+            }
+        }
+        for needle in ["GGM.LaunchGame", "GGM.SmartLaunch", "StartGame("] {
+            if let snippet = snippet(around: needle, in: html, radius: 220) {
+                hints.append("片段 \(redactSecrets(snippet))")
+            }
+        }
+        if let launch = launchObject(from: html) {
+            hints.append(
+                "m_objData region=\(launch.region) sn=\(launch.sn) data=\(launch.data.count) chars"
+            )
+        }
+        let accountFields = propertyNames(prefix: "MyAccountData", in: html)
+        if !accountFields.isEmpty {
+            hints.append("MyAccountData 欄位：\(accountFields.joined(separator: ", "))")
+        }
+        let launchFields = uniqueNames(
+            propertyNames(prefix: "m_objData", in: html) + objectLiteralKeys(named: "m_objData", in: html)
+        )
+        if !launchFields.isEmpty {
+            hints.append("m_objData 欄位：\(launchFields.joined(separator: ", "))")
+        }
+        for needle in ["m_objData =", "var m_objData", "function StartGame", "supportService", "var MyAccountData"] {
+            if let snippet = snippet(around: needle, in: html, radius: 480) {
+                hints.append("片段 \(redactSecrets(snippet))")
+            }
+        }
+        return hints
+    }
+
+    static func snippet(around needle: String, in html: String, radius: Int) -> String? {
+        guard let range = html.range(of: needle, options: .caseInsensitive) else { return nil }
+        let start = html.index(range.lowerBound, offsetBy: -radius, limitedBy: html.startIndex) ?? html.startIndex
+        let end = html.index(range.upperBound, offsetBy: radius, limitedBy: html.endIndex) ?? html.endIndex
+        return String(html[start..<end])
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
+
+    static func redactSecrets(_ text: String) -> String {
+        var value = summarizeDataField(in: text)
+        value = value.replacingOccurrences(
+            of: #"(WebToken|SecretCode|webToken|secretCode)\s*[:=]\s*['"][^'"]+['"]"#,
+            with: "$1=[redacted]",
+            options: .regularExpression
+        )
+        return value
+    }
+
+    static func summarizeDataField(in text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #""data"\s*:\s*"([^"]+)""#) else {
+            return text
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let valueRange = Range(match.range(at: 1), in: text) else {
+            return text
+        }
+        let payload = String(text[valueRange])
+        guard payload.count >= 24 else { return text }
+        return text.replacingCharacters(in: valueRange, with: "[\(payload.count) chars]")
+    }
+
+    struct LaunchObject {
+        let region: String
+        let sn: String
+        let data: String
+    }
+
+    static func launchObject(from html: String) -> LaunchObject? {
+        guard let keyword = html.range(of: "m_objData") else { return nil }
+        guard let braceStart = html[keyword.upperBound...].firstIndex(of: "{") else { return nil }
+        var depth = 0
+        var braceEnd: String.Index?
+        var index = braceStart
+        while index < html.endIndex {
+            let character = html[index]
+            if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0 {
+                    braceEnd = html.index(after: index)
+                    break
+                }
+            }
+            index = html.index(after: index)
+        }
+        guard let braceEnd else { return nil }
+        let json = String(html[braceStart..<braceEnd])
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let region = object["region"] as? String,
+              let sn = object["sn"] as? String,
+              let payload = object["data"] as? String,
+              !payload.isEmpty else {
+            return nil
+        }
+        return LaunchObject(region: region, sn: sn, data: payload)
+    }
+
+    static func propertyNames(prefix: String, in html: String) -> [String] {
+        let escaped = NSRegularExpression.escapedPattern(for: prefix)
+        guard let regex = try? NSRegularExpression(pattern: #"\#(escaped)\.([A-Za-z_][A-Za-z0-9_]*)"#) else {
+            return []
+        }
+        let range = NSRange(html.startIndex..., in: html)
+        var names: [String] = []
+        var seen = Set<String>()
+        for match in regex.matches(in: html, range: range) {
+            guard let valueRange = Range(match.range(at: 1), in: html) else { continue }
+            let name = String(html[valueRange])
+            if seen.insert(name).inserted {
+                names.append(name)
+            }
+        }
+        return names
+    }
+
+    static func objectLiteralKeys(named name: String, in html: String) -> [String] {
+        let escaped = NSRegularExpression.escapedPattern(for: name)
+        guard let regex = try? NSRegularExpression(pattern: #"\#(escaped)\s*=\s*\{([^}]*)\}"#),
+              let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+              let innerRange = Range(match.range(at: 1), in: html) else {
+            return []
+        }
+        let inner = String(html[innerRange])
+        guard let keyRegex = try? NSRegularExpression(pattern: #"([A-Za-z_][A-Za-z0-9_]*)\s*:"#) else {
+            return []
+        }
+        var names: [String] = []
+        var seen = Set<String>()
+        let range = NSRange(inner.startIndex..., in: inner)
+        for match in keyRegex.matches(in: inner, range: range) {
+            guard let valueRange = Range(match.range(at: 1), in: inner) else { continue }
+            let name = String(inner[valueRange])
+            if seen.insert(name).inserted {
+                names.append(name)
+            }
+        }
+        return names
+    }
+
+    static func uniqueNames(_ names: [String]) -> [String] {
+        var seen = Set<String>()
+        return names.filter { seen.insert($0).inserted }
+    }
+}
+
+/// Offline `Command.DecryptParam` for `gamaniagames://…&&&&Data=…` (Cmd 06004/06006).
+enum GGMDataParam {
+    static let substitutionTables = [
+        "18EA0FD239BBD938",
+        "bac987d65e432f10",
+        "3bc4d5e6f2a79108",
+        "cdbeaf9012456378",
+        "4e6fb81a3c5d7092",
+        "bdef1246789ac530",
+        "5f82cb4093e71d6a",
+        "df1468ace0357b92",
+    ]
+
+    static func decryptParam(_ data: String) throws -> [String: String] {
+        guard let first = data.first, first.isHexDigit,
+              let offset = Int(String(first), radix: 16), (0...15).contains(offset) else {
+            throw BeanfunError.parse("Data 偏移量無效")
+        }
+        guard data.count > 1 else {
+            throw BeanfunError.parse("Data 太短")
+        }
+        // Table 0 in the protocol doc is not a hex permutation. Live 06006
+        // payloads decode with tables[1 + offset % 4] (tables 1–4).
+        let tableIndex = 1 + (offset % 4)
+        let table = substitutionTables[tableIndex]
+        var hexDigits: [Character] = []
+        hexDigits.reserveCapacity(data.count - 1)
+        for character in data.dropFirst() {
+            guard let index = table.firstIndex(of: character) else {
+                throw BeanfunError.parse("Data 字元 \(character) 不在代換表 \(tableIndex) 中")
+            }
+            let nibble = table.distance(from: table.startIndex, to: index)
+            hexDigits.append(nibbleHexCharacter(nibble))
+        }
+        let hexPayload = String(hexDigits)
+        let keyStart = offset + 1
+        guard keyStart + 8 <= hexPayload.count else {
+            throw BeanfunError.parse("Data 還原後長度不足以提取 DES key")
+        }
+        let desKey = String(hexPayload.dropFirst(keyStart).prefix(8))
+        let cipherHex = String(hexPayload.prefix(keyStart) + hexPayload.dropFirst(keyStart + 8))
+        guard let encrypted = Data(hexString: cipherHex) else {
+            throw BeanfunError.parse("Data 還原後的 DES 密文不是合法 hex")
+        }
+        let plaintext = try DESCipher.decryptECB(
+            ciphertext: encrypted,
+            asciiKey: Data(desKey.utf8)
+        )
+        guard var text = String(data: plaintext, encoding: .utf8)?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\0")) else {
+            throw BeanfunError.parse("Data 解密結果不是 UTF-8")
+        }
+        while text.last == "\0" {
+            text.removeLast()
+        }
+        var params: [String: String] = [:]
+        let pieces = text.split { $0 == ";" || $0 == "&" || $0 == "\n" }
+        for pair in pieces {
+            guard let separator = pair.firstIndex(of: "=") else { continue }
+            let key = String(pair[..<separator])
+            let value = String(pair[pair.index(after: separator)...])
+            if !key.isEmpty {
+                params[key] = value
+            }
+        }
+        guard !params.isEmpty else {
+            throw BeanfunError.parse("Data 解密後沒有鍵值對")
+        }
+        return params
+    }
+
+    static func launchTicket(from data: String) throws -> String {
+        let params = try decryptParam(data)
+        guard let launchTicket = params["LaunchTicket"],
+              launchTicket.count == 64,
+              launchTicket.allSatisfy(\.isHexDigit) else {
+            throw BeanfunError.parse("Data 解密後缺少 64 字元 LaunchTicket")
+        }
+        return launchTicket
+    }
+
+    static func decryptOTPEnvelope(_ envelope: String) throws -> String {
+        guard envelope.count >= 40 else {
+            throw BeanfunError.parse("OTP envelope 太短")
+        }
+        let keyText = String(envelope.prefix(8))
+        let encryptedText = String(envelope.dropFirst(8))
+        guard let key = keyText.data(using: .ascii),
+              let encrypted = Data(hexString: encryptedText) else {
+            throw BeanfunError.parse("OTP envelope 的 DES key 或密文無效")
+        }
+        let plaintext = try DESCipher.decryptECB(ciphertext: encrypted, asciiKey: key)
+        guard let otp = String(data: plaintext, encoding: .utf8)?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\0")),
+              !otp.isEmpty else {
+            throw BeanfunError.parse("OTP 解密結果不是 UTF-8")
+        }
+        return otp
+    }
+
+    private static func nibbleHexCharacter(_ value: Int) -> Character {
+        precondition((0...15).contains(value))
+        return Character(String(value, radix: 16))
+    }
+}
 
 @MainActor
 final class BeanfunClient {
@@ -14,10 +467,15 @@ final class BeanfunClient {
     private var session: URLSession
     private var cookieStorage: HTTPCookieStorage
     private let logHandler: (String) -> Void
+    private let ggmLaunchHandler: (GGMLaunchTicket) -> Void
     private var activeQRSession: BeanfunQRSession?
 
-    init(log: @escaping (String) -> Void) {
+    init(
+        log: @escaping (String) -> Void,
+        ggmLaunch: @escaping (GGMLaunchTicket) -> Void = { _ in }
+    ) {
         logHandler = log
+        ggmLaunchHandler = ggmLaunch
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = true
         configuration.httpCookieAcceptPolicy = .always
@@ -290,13 +748,38 @@ final class BeanfunClient {
             ]
         )
         let step2Response = try await request(step2URL)
-        let start = try parseStartData(try text(step2Response.data))
+        let step2HTML = try text(step2Response.data)
+        let start = try parseStartData(step2HTML)
+        let ppppp = BeanfunWebStartOTP.ppppp(from: step2HTML, fallback: Self.ppppp)
         log("  LongPolling key=\(start.longPollingKey)")
         log("  account_id=\(start.accountID)")
         log("  sn=\(start.sn)")
         log("  name=\(start.displayName)")
         log("  create_time=\(start.createTime)")
         secret("  dynamic_session_guard=\(start.guardName)=\(start.guardValue)")
+        if let launch = BeanfunWebStartOTP.launchObject(from: step2HTML) {
+            let ticket = GGMLaunchTicket(
+                region: launch.region,
+                sn: launch.sn,
+                command: BeanfunWebStartOTP.ggmCommand(serviceCode: game.serviceCode, html: step2HTML),
+                data: launch.data
+            )
+            ggmLaunchHandler(ticket)
+            log("  GGM URI 已可在進階模式複製：Region=\(ticket.region) SN=\(ticket.sn) Cmd=\(ticket.command) Data=\(ticket.data.count) chars")
+            if let launchTicket = try? GGMDataParam.launchTicket(from: launch.data) {
+                log("  Data 離線解密：LaunchTicket=\(launchTicket.count) chars")
+            }
+        } else if start.ggmData.isEmpty {
+            log("  頁面沒有 m_objData.data")
+        } else {
+            log("  m_objData.data \(start.ggmData.count) chars")
+        }
+        if ppppp != Self.ppppp {
+            log("  step2 內嵌 ppppp 與內建常數不同，改用頁面值")
+        }
+        for hint in BeanfunWebStartOTP.pageHints(from: step2HTML) {
+            log("  step2：\(hint)")
+        }
         guard start.accountID == account.id, start.sn == account.sn else {
             throw BeanfunError.parse("step2 回傳帳號與所選帳號不同")
         }
@@ -310,7 +793,7 @@ final class BeanfunClient {
             label: "SecretCode"
         )
         secret("  SecretCode=\(secretCode)")
-        secret("  ppppp=\(Self.ppppp)")
+        secret("  ppppp=\(ppppp)")
 
         log("[OTP 3/6] 登記遊戲啟動")
         let recordURL = try makeURL("https://\(Self.host)/beanfun_block/generic_handlers/record_service_start.ashx")
@@ -348,7 +831,7 @@ final class BeanfunClient {
             query: [
                 "meth": "GetResultByLongPolling",
                 "key": start.longPollingKey,
-                "_": String(Int(Date().timeIntervalSince1970 * 1000)),
+                "_": Self.loginTimestamp(),
             ]
         )
         Task { @MainActor [weak self] in
@@ -363,23 +846,37 @@ final class BeanfunClient {
         await Task.yield()
         log("  LongPolling 已開始；主流程繼續")
 
+        if let launch = BeanfunWebStartOTP.launchObject(from: step2HTML),
+           game.id == GameDefinition.mapleStory.id {
+            do {
+                return try await fetchOTPV2(
+                    launchData: launch.data,
+                    schemeSN: launch.sn,
+                    account: account,
+                    game: game
+                )
+            } catch let error as BeanfunError {
+                log("  otp_v2 離線解密或請求失敗，改走舊 GET：\(error.localizedDescription)")
+            } catch {
+                log("  otp_v2 離線解密或請求失敗，改走舊 GET：\(error.localizedDescription)")
+            }
+        }
+
         log("[OTP 5/6] 取得 WebStart OTP envelope")
         guard let webToken = cookieValue(named: "bfWebToken") else {
             throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
         }
-        let otpURL = try url(
-            "https://\(Self.host)/beanfun_block/generic_handlers/get_webstart_otp.ashx",
-            query: [
-                "SN": start.longPollingKey,
-                "WebToken": webToken,
-                "SecretCode": secretCode,
-                "ppppp": Self.ppppp,
-                "ServiceCode": game.serviceCode,
-                "ServiceRegion": game.serviceRegion,
-                "ServiceAccount": start.accountID,
-                "CreateTime": start.createTime,
-                "d": String(Int(Date().timeIntervalSince1970 * 1000)),
-            ]
+        let otpURL = try BeanfunWebStartOTP.makeURL(
+            host: Self.host,
+            sn: start.longPollingKey,
+            webToken: webToken,
+            secretCode: secretCode,
+            ppppp: ppppp,
+            serviceCode: game.serviceCode,
+            serviceRegion: game.serviceRegion,
+            serviceAccount: start.accountID,
+            createTime: start.createTime,
+            d: BeanfunWebStartOTP.cacheBuster()
         )
         let otpResponse = try await request(otpURL, referer: step2URL)
         let envelope = try text(otpResponse.data).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -419,6 +916,64 @@ final class BeanfunClient {
         return OTPResult(value: otp, retrievedAt: Date(), commandLine: commandLine)
     }
 
+    private func fetchOTPV2(
+        launchData: String,
+        schemeSN: String,
+        account: GameAccount,
+        game: GameDefinition
+    ) async throws -> OTPResult {
+        log("[OTP 5/6] 離線解密 Data 並 POST get_webstart_otp_v2.ashx")
+        let launchTicket = try GGMDataParam.launchTicket(from: launchData)
+        secret("  LaunchTicket=\(launchTicket)")
+        secret("  otp_v2 SN=\(schemeSN)")
+        let hash = try BeanfunWebStartOTP.ggmWebStartDLLHash()
+        log("  GGMWebStart.dll SHA-256=\(hash.prefix(8))…（\(hash.count) chars）")
+        guard let url = URL(string: BeanfunWebStartOTP.otpV2URL) else {
+            throw BeanfunError.invalidURL(BeanfunWebStartOTP.otpV2URL)
+        }
+        let body = BeanfunWebStartOTP.otpV2RequestBody(
+            sn: schemeSN,
+            launchTicket: launchTicket,
+            hash: hash
+        )
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpShouldHandleCookies = false
+        request.httpBody = body
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        log("  → POST \(BeanfunWebStartOTP.otpV2URL)（無 Cookie，body \(body.count) bytes）")
+
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else {
+            throw BeanfunError.network("沒有 HTTP response")
+        }
+        log("  ← HTTP \(http.statusCode)，收到 \(data.count) bytes")
+        guard (200..<400).contains(http.statusCode) else {
+            let bodyText = String(data: data, encoding: .utf8) ?? ""
+            throw BeanfunError.http(http.statusCode, url.absoluteString, bodyText)
+        }
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw BeanfunError.parse("otp_v2 回應不是 JSON")
+        }
+        let resultCode = (object["result"] as? NSNumber)?.intValue ?? object["result"] as? Int
+        let message = object["message"] as? String
+        guard resultCode == 1, let envelope = object["data"] as? String else {
+            let reason = message ?? String(data: data, encoding: .utf8) ?? "未知錯誤"
+            throw BeanfunError.rejected(reason)
+        }
+        log("  otp_v2 成功：data=\(envelope.count) chars")
+
+        log("[OTP 6/6] DES-ECB 解密")
+        let otp = try GGMDataParam.decryptOTPEnvelope(envelope)
+        let commandLine = game.commandLine(accountID: account.id, otp: otp)
+        log("  OTP 解密成功：\(otp.count) 字元")
+        secret("  OTP=\(otp)")
+        return OTPResult(value: otp, retrievedAt: Date(), commandLine: commandLine)
+    }
+
     private func parseStartData(_ page: String) throws -> GameStartData {
         do {
             let key = try capture(
@@ -452,6 +1007,7 @@ final class BeanfunClient {
             )
             let guardValue = encodedGuard.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
                 ?? encodedGuard
+            let ggmData = BeanfunWebStartOTP.launchObject(from: page)?.data ?? ""
             return GameStartData(
                 longPollingKey: key,
                 accountID: accountID,
@@ -459,7 +1015,8 @@ final class BeanfunClient {
                 displayName: displayName,
                 createTime: createTime,
                 guardName: guardName,
-                guardValue: guardValue
+                guardValue: guardValue,
+                ggmData: ggmData
             )
         } catch {
             let lower = page.lowercased()

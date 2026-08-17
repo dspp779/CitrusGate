@@ -408,19 +408,29 @@ struct ContentView: View {
                 } else if let account = model.selectedAccount {
                     VStack(spacing: 10) {
                         if model.selectedGame?.id == GameDefinition.mapleStory.id {
-                            HStack(spacing: 10) {
-                                Button {
-                                    model.launchSelectedAccountViaNativeOTPCyder()
-                                } label: {
-                                    Label("開啟", systemImage: "play.fill")
+                            VStack(spacing: 10) {
+                                HStack(spacing: 10) {
+                                    Button {
+                                        model.launchSelectedAccountViaOpen()
+                                    } label: {
+                                        Label("開啟", systemImage: "play.fill")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .disabled(model.areLaunchButtonsDisabled)
+
+                                    Button {
+                                        model.launchSelectedAccountViaCyder()
+                                    } label: {
+                                        Label("Cyder 開啟", systemImage: "shippingbox")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .disabled(model.areLaunchButtonsDisabled)
                                 }
-                                .buttonStyle(.bordered)
-                                .disabled(model.areLaunchButtonsDisabled)
 
                                 Button {
                                     model.launchSelectedAccountViaGGMScheme()
                                 } label: {
-                                    Label("開啟 gamaniagames://", systemImage: "link.circle.fill")
+                                    Label("用橘子遊戲管理器開啟", systemImage: "square.stack.3d.up.fill")
                                 }
                                 .buttonStyle(.bordered)
                                 .disabled(model.areLaunchButtonsDisabled)

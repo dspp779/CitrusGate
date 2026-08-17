@@ -370,8 +370,7 @@ final class AppModel: ObservableObject {
                     case .defaultOpen:
                         launchViaOpen()
                     case .cyderApp:
-                        guard let game = selectedGame else { return }
-                        launchViaOpen(launcher: .cyder(for: game))
+                        launchViaOpen(launcher: .cyder)
                     case .nativeOTPCyder:
                         launchViaOpen(launcher: .cyder)
                     case .mapleStoryWine:
@@ -541,6 +540,11 @@ final class AppModel: ObservableObject {
     }
 
     func launchSelectedAccountViaCyder() {
+        if selectedGame?.id == GameDefinition.mapleStory.id,
+           !CyderInstallation.isOfficialCyderInstalled() {
+            errorMessage = "請先安裝 Cyder 正式版。"
+            return
+        }
         pendingLaunchKind = .cyderApp
         launchSelectedAccount()
     }

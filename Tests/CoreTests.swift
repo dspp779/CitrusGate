@@ -43,9 +43,10 @@ enum CoreTests {
         try testWebStartOTPCacheBusterIsInt32()
         try testWebStartOTPExtractsPPPPPFromPage()
         try testGGMLaunchTicketURI()
+        try testGGMLaunchTicketState()
         try testGGMWebStartPathResolution()
         try testGGMDecryptLaunchData()
-        print("CoreTests: 42 tests passed")
+        print("CoreTests: 43 tests passed")
     }
 
 
@@ -1126,6 +1127,25 @@ enum CoreTests {
             ],
             "GGM open argv must use official Cyder and a single URI, got \(args)"
         )
+    }
+
+    private static func testGGMLaunchTicketState() throws {
+        let ticket = GGMLaunchTicket(
+            region: "TW;Production",
+            sn: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            command: "06006",
+            data: "ABCDEF"
+        )
+        var state = GGMLaunchTicketState.none
+        try expect(state.ticket == nil, "empty state has no ticket")
+        try expect(state.isUsable == false, "empty state is not usable")
+        state = .usable(ticket)
+        try expect(state.isUsable, "usable state can launch GGM")
+        state.consume()
+        try expect(state.isUsable == false, "consumed ticket must not launch GGM")
+        try expect(state.ticket?.data == "ABCDEF", "consumed state keeps Data for display")
+        state.consume()
+        try expect(state.isUsable == false, "consume is idempotent")
     }
 
     private static func testGGMWebStartPathResolution() throws {

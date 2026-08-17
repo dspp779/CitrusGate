@@ -775,26 +775,36 @@ private struct GGMLaunchSection: View {
                             .padding(.top, 4)
                     }
                     if let ticket = model.ggmLaunchTicket {
-                        Text("Region=\(ticket.region)  SN=\(ticket.sn)  Cmd=\(ticket.command)  Data=\(ticket.data.count) chars")
-                            .font(.caption.monospaced())
-                            .textSelection(.enabled)
+                        if model.isGGMLaunchTicketUsable {
+                            Text("Region=\(ticket.region)  SN=\(ticket.sn)  Cmd=\(ticket.command)  Data=\(ticket.data.count) chars")
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        } else {
+                            Text("Data 已失效（已兌現或已交給 GGM）。下次請重新用橘子遊戲管理器開啟以取得新票。")
+                                .font(.caption.bold())
+                                .foregroundStyle(.orange)
+                        }
                         ScrollView {
                             Text(ticket.uri)
                                 .font(.system(size: 11, design: .monospaced))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .opacity(model.isGGMLaunchTicketUsable ? 1 : 0.45)
                         }
                         .frame(minHeight: 72, maxHeight: 140)
                         HStack {
                             Button { model.copyGGMURI() } label: {
                                 Label("複製 gamaniagames URI", systemImage: "link")
                             }
+                            .disabled(!model.isGGMLaunchTicketUsable)
                             Button { model.copyGGMSchemeCommand() } label: {
                                 Label("複製 open 指令", systemImage: "terminal")
                             }
+                            .disabled(!model.isGGMLaunchTicketUsable)
                             Button { model.copyGGMCyderCommand() } label: {
                                 Label("複製 GGMWebStart 指令", systemImage: "terminal.fill")
                             }
+                            .disabled(!model.isGGMLaunchTicketUsable)
                         }
                     }
                     HStack {
@@ -808,11 +818,7 @@ private struct GGMLaunchSection: View {
                         .disabled(model.areLaunchButtonsDisabled || model.selectedAccount == nil)
 
                         Button {
-                            if model.ggmLaunchTicket == nil {
-                                model.launchSelectedAccountViaGGM()
-                            } else {
-                                model.launchViaGGM()
-                            }
+                            model.launchSelectedAccountViaGGM()
                         } label: {
                             Label("以 GGMWebStart.exe 啟動", systemImage: "square.stack.3d.up.fill")
                         }

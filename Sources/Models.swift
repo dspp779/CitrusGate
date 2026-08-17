@@ -416,6 +416,32 @@ struct GGMLaunchTicket: Equatable {
     }
 }
 
+enum GGMLaunchTicketState: Equatable {
+    case none
+    case usable(GGMLaunchTicket)
+    case consumed(GGMLaunchTicket)
+
+    var ticket: GGMLaunchTicket? {
+        switch self {
+        case .none:
+            return nil
+        case .usable(let ticket), .consumed(let ticket):
+            return ticket
+        }
+    }
+
+    var isUsable: Bool {
+        if case .usable = self { return true }
+        return false
+    }
+
+    mutating func consume() {
+        if case .usable(let ticket) = self {
+            self = .consumed(ticket)
+        }
+    }
+}
+
 enum AppScreen: Equatable {
     case games
     case welcome

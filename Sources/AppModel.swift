@@ -56,7 +56,11 @@ final class AppModel: ObservableObject {
     @Published var accounts: [GameAccount] = []
     @Published var selectedAccountID: String?
     @Published var otp: OTPResult?
-    @Published var ggmLaunchTicket: GGMLaunchTicket?
+    @Published var ggmTicketState: GGMLaunchTicketState = .none
+
+    var ggmLaunchTicket: GGMLaunchTicket? { ggmTicketState.ticket }
+
+    var isGGMLaunchTicketUsable: Bool { ggmTicketState.isUsable }
     @Published var otpSecondsRemaining = 0
     @Published var autoRefresh = false
     @Published var autoRefreshInterval = 60
@@ -115,7 +119,7 @@ final class AppModel: ObservableObject {
             self?.appendLog(message)
         },
         ggmLaunch: { [weak self] ticket in
-            self?.ggmLaunchTicket = ticket
+            self?.ggmTicketState = .consumed(ticket)
         }
     )
     private lazy var nxdlDownloader = NxdlDownloader { [weak self] message in
@@ -263,7 +267,7 @@ final class AppModel: ObservableObject {
         accounts = []
         selectedAccountID = nil
         otp = nil
-        ggmLaunchTicket = nil
+        ggmTicketState = .none
         launchedAccountID = nil
         qrImage = nil
         logText = ""
@@ -339,7 +343,7 @@ final class AppModel: ObservableObject {
         selectedAccountID = account.id
         launchedAccountID = nil
         otp = nil
-        ggmLaunchTicket = nil
+        ggmTicketState = .none
     }
 
     private func retrieveOTP(launchWhenReady: Bool) {
@@ -353,7 +357,7 @@ final class AppModel: ObservableObject {
         }
         otpTask?.cancel()
         otpCountdownTask?.cancel()
-        ggmLaunchTicket = nil
+        ggmTicketState = .none
         client.includeSecrets = includeSecrets
         isBusy = true
         statusMessage = "正在取得 \(account.displayName) 的 OTP…"
@@ -365,8 +369,8 @@ final class AppModel: ObservableObject {
                 otp = result
                 isBusy = false
                 if game.id == GameDefinition.mapleStory.id {
-                    ggmLaunchTicket = nil
-                    appendLog("  原生 otp_v2 已兌現 LaunchTicket，此 URI 不可再交給 GGM")
+                    ggmTicketState.consume()
+                    appendLog("  原生 otp_v2 已兌現 LaunchTicket，此 Data 已標記無效")
                 }
                 if launchWhenReady {
                     statusMessage = "OTP 已取得，正在以 \(account.displayName) 開啟遊戲…"
@@ -437,19 +441,28 @@ final class AppModel: ObservableObject {
     }
 
     func copyGGMURI() {
-        guard let value = ggmLaunchTicket?.uri else { return }
+        guard isGGMLaunchTicketUsable, let value = ggmLaunchTicket?.uri else {
+            statusMessage = "此 Data 已失效，請重新用橘子遊戲管理器開啟以取得新 URI"
+            return
+        }
         copy(value)
         statusMessage = "GGM URI 已複製"
     }
 
     func copyGGMCyderCommand() {
-        guard let ticket = ggmLaunchTicket else { return }
+        guard isGGMLaunchTicketUsable, let ticket = ggmLaunchTicket else {
+            statusMessage = "此 Data 已失效，請重新用橘子遊戲管理器開啟以取得新 URI"
+            return
+        }
         copy(ticket.cyderOpenCommand(webStartPath: resolvedGGMWebStartPath))
         statusMessage = "GGM Cyder 指令已複製"
     }
 
     func copyGGMSchemeCommand() {
-        guard let ticket = ggmLaunchTicket else { return }
+        guard isGGMLaunchTicketUsable, let ticket = ggmLaunchTicket else {
+            statusMessage = "此 Data 已失效，請重新用橘子遊戲管理器開啟以取得新 URI"
+            return
+        }
         copy(ticket.schemeOpenCommand())
         statusMessage = "gamaniagames open 指令已複製"
     }
@@ -592,7 +605,7 @@ final class AppModel: ObservableObject {
         }
         otpTask?.cancel()
         otpCountdownTask?.cancel()
-        ggmLaunchTicket = nil
+        ggmTicketState = .none
         otp = nil
         client.includeSecrets = includeSecrets
         isBusy = true
@@ -602,7 +615,7 @@ final class AppModel: ObservableObject {
             do {
                 let ticket = try await client.prepareGGMLaunchTicket(for: account, game: game)
                 try Task.checkCancellation()
-                ggmLaunchTicket = ticket
+                ggmTicketState = .usable(ticket)
                 isBusy = false
                 statusMessage = "URI 已準備，正在啟動…"
                 switch pendingLaunchKind {
@@ -708,8 +721,8 @@ final class AppModel: ObservableObject {
             errorMessage = "Games Manager 啟動僅支援新楓之谷"
             return
         }
-        guard let ticket = ggmLaunchTicket else {
-            errorMessage = "尚未取得 Games Manager 啟動參數，請再試一次"
+        guard isGGMLaunchTicketUsable, let ticket = ggmLaunchTicket else {
+            errorMessage = "Games Manager 啟動參數已失效，請重新開啟"
             return
         }
         guard CyderInstallation.isOfficialCyderInstalled() else {
@@ -757,6 +770,7 @@ final class AppModel: ObservableObject {
         statusMessage = "正在以 Games Manager 啟動新楓之谷…"
         do {
             try process.run()
+            ggmTicketState.consume()
         } catch {
             isBusy = false
             markLaunchFailed()
@@ -769,8 +783,8 @@ final class AppModel: ObservableObject {
             errorMessage = "gamaniagames 啟動僅支援新楓之谷"
             return
         }
-        guard let ticket = ggmLaunchTicket else {
-            errorMessage = "尚未取得 gamaniagames 啟動參數，請再試一次"
+        guard isGGMLaunchTicketUsable, let ticket = ggmLaunchTicket else {
+            errorMessage = "gamaniagames 啟動參數已失效，請重新開啟"
             return
         }
 
@@ -802,10 +816,9 @@ final class AppModel: ObservableObject {
             }
         }
 
-        isBusy = true
-        statusMessage = "正在開啟 gamaniagames://…"
         do {
             try process.run()
+            ggmTicketState.consume()
         } catch {
             isBusy = false
             markLaunchFailed()
@@ -1610,7 +1623,7 @@ final class AppModel: ObservableObject {
         accounts = []
         selectedAccountID = nil
         otp = nil
-        ggmLaunchTicket = nil
+        ggmTicketState = .none
         launchedAccountID = nil
         qrImage = nil
         qrSecondsRemaining = 60

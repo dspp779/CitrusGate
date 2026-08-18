@@ -306,6 +306,27 @@ struct GameStartData {
     let ggmData: String
 }
 
+struct GGMLaunchTicket: Equatable {
+    let region: String
+    let sn: String
+    let command: String
+    let data: String
+
+    var uri: String {
+        BeanfunWebStartOTP.schemeURI(region: region, sn: sn, command: command, data: data)
+    }
+
+    func cyderOpenCommand(
+        webStartPath: String = BeanfunWebStartOTP.defaultWebStartPath
+    ) -> String {
+        BeanfunWebStartOTP.cyderOpenCommand(uri: uri, webStartPath: webStartPath)
+    }
+
+    func schemeOpenCommand() -> String {
+        BeanfunWebStartOTP.schemeOpenCommand(uri: uri)
+    }
+}
+
 enum BeanfunError: LocalizedError {
     case invalidURL(String)
     case http(Int, String, String)

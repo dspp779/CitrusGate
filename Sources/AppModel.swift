@@ -209,12 +209,8 @@ final class AppModel: ObservableObject {
         // executable before that would make it unclear which game is being set.
         guard !didStartManifestRefresh else { return }
         didStartManifestRefresh = true
-        Task { [weak self] in
-            guard let self, let updater = self.ggmManifestUpdater else { return }
-            let updated = await updater.refreshIfNeeded(current: self.activeGGMManifest)
-            await MainActor.run {
-                self.activeGGMManifest = updated
-            }
+        ggmManifestUpdater?.refreshIfNeeded(current: activeGGMManifest) { [weak self] updated in
+            self?.activeGGMManifest = updated
         }
     }
 

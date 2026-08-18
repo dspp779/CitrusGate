@@ -13,10 +13,24 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private static let officialNexonPlugAppPath = "/Library/Application Support/Nexon/Plug/NexonPlug.app"
     private static let nexonPlugScheme = "NexonPlug"
     private static let beanfunOTPBundleID = "local.ogom.beanfunotp.legacy"
+    private static let ggmWebStartPathKey = "GGMWebStartPath"
+    private static let ggmManifestURLString =
+        "https://raw.githubusercontent.com/dspp779/CitrusGate/main/metadata/ggm-manifest.json"
 
-    private let client = BeanfunClient { message in
-        NSLog("%@", message)
-    }
+    private let ggmManifestStore = GGMManifestStore(
+        cacheFolderName: GGMManifestStore.legacyCacheFolderName
+    )
+    private var ggmManifestUpdater: GGMManifestUpdater?
+    private var activeGGMManifest = GGMManifest.fallback()
+    private var ggmWebStartPath = ""
+    private var ggmBusy = false
+
+    private lazy var client = BeanfunClient(
+        log: { message in NSLog("%@", message) },
+        manifest: { [weak self] in
+            self?.activeGGMManifest ?? GGMManifest.fallback()
+        }
+    )
 
     private var screen: Screen = .games {
         didSet { updateVisibility() }
@@ -85,6 +99,9 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private let secondaryButton = NSButton(title: "複製帳號", target: nil, action: nil)
     private let wineLaunchButton = NSButton(title: "以 Launcher 開啟", target: nil, action: nil)
     private let copyCmdButton = NSButton(title: "複製指令", target: nil, action: nil)
+    private let ggmSchemeButton = NSButton(title: "用橘子遊戲管理器開啟", target: nil, action: nil)
+    private let ggmWebStartButton = NSButton(title: "以 GGMWebStart 啟動", target: nil, action: nil)
+    private var ggmButtonRow: NSStackView!
     private let backButton = NSButton(title: "選擇其他遊戲", target: nil, action: nil)
 
     override func loadView() {
@@ -94,6 +111,9 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        let storedGGM = UserDefaults.standard.string(forKey: Self.ggmWebStartPathKey) ?? ""
+        ggmWebStartPath = BeanfunWebStartOTP.resolvedWebStartPath(stored: storedGGM)
+        loadGGMManifest()
         tableView.reloadData()
         restoreLastGame()
         updateVisibility()
@@ -102,6 +122,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     override func viewDidAppear() {
         super.viewDidAppear()
         updateWindowSize(animate: false)
+        refreshGGMManifestIfNeeded()
     }
 
     deinit {
@@ -246,6 +267,14 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         copyCmdButton.target = self
         copyCmdButton.action = #selector(handleCopyCmd)
 
+        ggmSchemeButton.bezelStyle = .rounded
+        ggmSchemeButton.target = self
+        ggmSchemeButton.action = #selector(handleGGMScheme)
+
+        ggmWebStartButton.bezelStyle = .rounded
+        ggmWebStartButton.target = self
+        ggmWebStartButton.action = #selector(handleGGMWebStart)
+
         backButton.isBordered = false
         backButton.target = self
         backButton.action = #selector(handleBack)
@@ -257,8 +286,14 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         buttonRow.distribution = .fillEqually
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
 
+        ggmButtonRow = NSStackView(views: [ggmSchemeButton, ggmWebStartButton])
+        ggmButtonRow.orientation = .horizontal
+        ggmButtonRow.spacing = 10
+        ggmButtonRow.distribution = .fillEqually
+        ggmButtonRow.translatesAutoresizingMaskIntoConstraints = false
+
         rootStackView = NSStackView(views: [
-            statusLabel, scrollView, imageView, qrStatusLabel, classicContainer, otpBlock, exeContainer, buttonRow, backButton,
+            statusLabel, scrollView, imageView, qrStatusLabel, classicContainer, otpBlock, exeContainer, buttonRow, ggmButtonRow, backButton,
         ])
         rootStackView.orientation = .vertical
         rootStackView.alignment = .centerX
@@ -282,6 +317,8 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             classicContainer.trailingAnchor.constraint(equalTo: rootStackView.trailingAnchor),
             buttonRow.leadingAnchor.constraint(equalTo: rootStackView.leadingAnchor),
             buttonRow.trailingAnchor.constraint(equalTo: rootStackView.trailingAnchor),
+            ggmButtonRow.leadingAnchor.constraint(equalTo: rootStackView.leadingAnchor),
+            ggmButtonRow.trailingAnchor.constraint(equalTo: rootStackView.trailingAnchor),
         ])
     }
 
@@ -312,7 +349,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     private func updateWindowSize(animate: Bool = true) {
         view.layoutSubtreeIfNeeded()
-        let minH: CGFloat = (screen == .accounts || screen == .otp) ? 420 : ((screen == .qr) ? 440 : 340)
+        let minH: CGFloat = (screen == .accounts || screen == .otp) ? 460 : ((screen == .qr) ? 440 : 340)
         let targetHeight = max(rootStackView.fittingSize.height, minH)
         guard targetHeight > 0 else { return }
 
@@ -348,6 +385,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             secondaryButton.isHidden = true
             wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
+            ggmButtonRow.isHidden = true
             backButton.isHidden = true
         case .qr:
             primaryButton.isHidden = false
@@ -356,14 +394,19 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             secondaryButton.isHidden = true
             wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
+            ggmButtonRow.isHidden = true
             backButton.isHidden = false
         case .accounts:
             primaryButton.isHidden = false
             primaryButton.title = "取得 OTP"
-            primaryButton.isEnabled = selectedAccountIndex >= 0
+            primaryButton.isEnabled = selectedAccountIndex >= 0 && !ggmBusy
             secondaryButton.isHidden = true
             wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
+            let showGGM = selectedGame?.id == GameDefinition.mapleStory.id
+            ggmButtonRow.isHidden = !showGGM
+            ggmSchemeButton.isEnabled = selectedAccountIndex >= 0 && !ggmBusy
+            ggmWebStartButton.isEnabled = selectedAccountIndex >= 0 && !ggmBusy
             backButton.isHidden = false
         case .otp:
             primaryButton.isHidden = false
@@ -390,6 +433,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
                 wineLaunchButton.isHidden = true
             }
             copyCmdButton.isHidden = false
+            ggmButtonRow.isHidden = true
             backButton.isHidden = false
         case .classic:
             let hasExe = !executablePath.isEmpty && FileManager.default.fileExists(atPath: executablePath)
@@ -403,6 +447,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             secondaryButton.isHidden = true
             wineLaunchButton.isHidden = true
             copyCmdButton.isHidden = true
+            ggmButtonRow.isHidden = true
             backButton.isHidden = false
         }
     }
@@ -508,6 +553,10 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     @objc private func handleChooseExecutable() {
         chooseExecutable()
+    }
+
+    @objc private func handleChooseGGMWebStart() {
+        chooseGGMWebStart()
     }
 
     @objc private func handleOpenClassicWeb() {
@@ -642,6 +691,10 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         let chooseItem = NSMenuItem(title: "選擇主程式", action: #selector(handleChooseExecutable), keyEquivalent: "")
         chooseItem.target = self
         exeSubMenu.addItem(chooseItem)
+
+        let chooseGGMItem = NSMenuItem(title: "選擇 GGMWebStart…", action: #selector(handleChooseGGMWebStart), keyEquivalent: "")
+        chooseGGMItem.target = self
+        exeSubMenu.addItem(chooseGGMItem)
 
         let downloadItem = NSMenuItem(title: "下載主程式", action: #selector(handleDownloadMenuAction), keyEquivalent: "")
         downloadItem.target = self
@@ -993,6 +1046,201 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         statusLabel.stringValue = "啟動指令已複製"
     }
 
+    @objc private func handleGGMScheme() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else { return }
+        guard let account = currentAccountForGGM() else { return }
+        setGGMBusy(true)
+        statusLabel.stringValue = "正在準備 \(account.displayName) 的 gamaniagames://…"
+        client.prepareGGMLaunchTicket(for: account, game: GameDefinition.mapleStory) { [weak self] result in
+            guard let self = self else { return }
+            self.setGGMBusy(false)
+            switch result {
+            case let .success(ticket):
+                self.launchViaGamaniagamesScheme(ticket)
+            case let .failure(error):
+                self.showError(error)
+            }
+        }
+    }
+
+    @objc private func handleGGMWebStart() {
+        guard selectedGame?.id == GameDefinition.mapleStory.id else { return }
+        guard CyderInstallation.isOfficialCyderInstalled() else {
+            showError(BeanfunError.rejected("請先安裝 Cyder 正式版，才能啟動 gamania Games Manager。"))
+            return
+        }
+        guard validatedGGMWebStartPath() != nil else {
+            chooseGGMWebStart()
+            return
+        }
+        guard let account = currentAccountForGGM() else { return }
+        setGGMBusy(true)
+        statusLabel.stringValue = "正在準備 \(account.displayName) 的 GGMWebStart…"
+        client.prepareGGMLaunchTicket(for: account, game: GameDefinition.mapleStory) { [weak self] result in
+            guard let self = self else { return }
+            self.setGGMBusy(false)
+            switch result {
+            case let .success(ticket):
+                self.launchViaGGMWebStart(ticket)
+            case let .failure(error):
+                self.showError(error)
+            }
+        }
+    }
+
+    private func currentAccountForGGM() -> GameAccount? {
+        if let selectedAccount { return selectedAccount }
+        guard accounts.indices.contains(selectedAccountIndex) else {
+            showError(BeanfunError.rejected("請先選擇新楓之谷帳號"))
+            return nil
+        }
+        return accounts[selectedAccountIndex]
+    }
+
+    private func setGGMBusy(_ busy: Bool) {
+        ggmBusy = busy
+        updateButtons()
+    }
+
+    private func loadGGMManifest() {
+        do {
+            let fallback = try ggmManifestStore.loadFallbackManifest()
+            activeGGMManifest = fallback
+            if let cached = try ggmManifestStore.loadCachedManifest(),
+               cached.isNewer(than: fallback) {
+                activeGGMManifest = cached
+            }
+        } catch {
+            activeGGMManifest = GGMManifest.fallback()
+        }
+        if let url = URL(string: Self.ggmManifestURLString) {
+            ggmManifestUpdater = GGMManifestUpdater(
+                manifestURL: url,
+                store: ggmManifestStore,
+                log: { message in NSLog("%@", message) }
+            )
+        }
+    }
+
+    private func refreshGGMManifestIfNeeded() {
+        ggmManifestUpdater?.refreshIfNeeded(current: activeGGMManifest) { [weak self] updated in
+            self?.activeGGMManifest = updated
+        }
+    }
+
+    private var resolvedGGMWebStartPath: String {
+        BeanfunWebStartOTP.resolvedWebStartPath(stored: ggmWebStartPath)
+    }
+
+    private func validatedGGMWebStartPath() -> String? {
+        let path = resolvedGGMWebStartPath
+        let name = URL(fileURLWithPath: path).lastPathComponent.lowercased()
+        guard name == "ggmwebstart.exe", FileManager.default.fileExists(atPath: path) else {
+            return nil
+        }
+        return path
+    }
+
+    private func chooseGGMWebStart() {
+        let panel = NSOpenPanel()
+        panel.title = "選擇 GGMWebStart.exe"
+        panel.message = "從 Cyder bottle 的 drive_c／Program Files／gamania Games／gamania Games Manager 選擇 GGMWebStart.exe"
+        panel.prompt = "選擇"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        if #available(macOS 11.0, *) {
+            panel.allowedContentTypes = [UTType(filenameExtension: "exe") ?? .data]
+        } else {
+            panel.allowedFileTypes = ["exe"]
+        }
+        let resolved = URL(fileURLWithPath: resolvedGGMWebStartPath)
+        let managerFolder = resolved.deletingLastPathComponent()
+        if FileManager.default.fileExists(atPath: managerFolder.path) {
+            panel.directoryURL = managerFolder
+        } else {
+            let bottles = NSHomeDirectory() + "/Library/Application Support/Cyder/bottles"
+            if FileManager.default.fileExists(atPath: bottles) {
+                panel.directoryURL = URL(fileURLWithPath: bottles)
+            }
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard url.lastPathComponent.lowercased() == "ggmwebstart.exe" else {
+            showError(BeanfunError.rejected("請選擇 GGMWebStart.exe，不要選 MapleStory.exe"))
+            return
+        }
+        ggmWebStartPath = url.path
+        UserDefaults.standard.set(url.path, forKey: Self.ggmWebStartPathKey)
+        statusLabel.stringValue = "已記住 GGMWebStart.exe 位置"
+    }
+
+    private func launchViaGamaniagamesScheme(_ ticket: GGMLaunchTicket) {
+        let standardError = Pipe()
+        do {
+            try runProcess(
+                launchPath: "/usr/bin/open",
+                arguments: BeanfunWebStartOTP.openSchemeArguments(uri: ticket.uri),
+                standardError: standardError
+            ) { [weak self] process in
+                let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
+                let errorText = String(data: errorData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    if process.terminationStatus == 0 {
+                        self.statusLabel.stringValue = "已開啟 gamaniagames://"
+                    } else {
+                        let message = errorText.flatMap { $0.isEmpty ? nil : $0 }
+                            ?? "open 結束代碼 \(process.terminationStatus)"
+                        self.showError(BeanfunError.rejected(message))
+                    }
+                }
+            }
+            statusLabel.stringValue = "正在開啟 gamaniagames://…"
+        } catch {
+            showError(error)
+        }
+    }
+
+    private func launchViaGGMWebStart(_ ticket: GGMLaunchTicket) {
+        guard CyderInstallation.isOfficialCyderInstalled() else {
+            showError(BeanfunError.rejected("請先安裝 Cyder 正式版，才能啟動 gamania Games Manager。"))
+            return
+        }
+        guard let path = validatedGGMWebStartPath() else {
+            showError(BeanfunError.rejected(
+                BeanfunWebStartOTP.missingWebStartPathDescription(path: resolvedGGMWebStartPath)
+            ))
+            return
+        }
+        let standardError = Pipe()
+        do {
+            try runProcess(
+                launchPath: "/usr/bin/open",
+                arguments: BeanfunWebStartOTP.openArguments(uri: ticket.uri, webStartPath: path),
+                standardError: standardError
+            ) { [weak self] process in
+                let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
+                let errorText = String(data: errorData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    if process.terminationStatus == 0 {
+                        self.statusLabel.stringValue = "已透過 Games Manager 啟動新楓之谷"
+                    } else {
+                        let message = errorText.flatMap { $0.isEmpty ? nil : $0 }
+                            ?? "open 結束代碼 \(process.terminationStatus)"
+                        self.showError(BeanfunError.rejected(message))
+                    }
+                }
+            }
+            statusLabel.stringValue = "正在以 Games Manager 啟動新楓之谷…"
+        } catch {
+            showError(error)
+        }
+    }
+
     @objc private func handleBack() {
         client.reset()
         selectedGame = nil
@@ -1141,11 +1389,15 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             switch result {
             case let .success(accounts):
                 self.accounts = accounts
-                if accounts.count == 1 {
+                if accounts.count == 1, game.id != GameDefinition.mapleStory.id {
                     self.selectedAccountIndex = 0
                     self.fetchOTP(for: accounts[0], autoLaunch: true)
                 } else {
                     self.clearTableSelection()
+                    if accounts.count == 1 {
+                        self.selectedAccountIndex = 0
+                        self.tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+                    }
                     self.statusLabel.stringValue = "選擇\(game.name)帳號"
                     self.screen = .accounts
                 }
@@ -1160,10 +1412,10 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     private func fetchOTP(for account: GameAccount, autoLaunch: Bool = false) {
         guard let game = selectedGame else { return }
         statusLabel.stringValue = "取得\(account.displayName)的 OTP…"
-        primaryButton.isEnabled = false
+        setGGMBusy(true)
         client.fetchOTP(for: account, game: game) { [weak self] result in
             guard let self = self else { return }
-            self.primaryButton.isEnabled = true
+            self.setGGMBusy(false)
             switch result {
             case let .success(otp):
                 self.selectedAccount = account

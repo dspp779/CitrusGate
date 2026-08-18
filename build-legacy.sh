@@ -32,7 +32,11 @@ mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources/GameImages"
 
 sources=("$source_dir"/*.swift \
   "$project_dir/Sources/NxdlDownloader.swift" \
-  "$project_dir/Sources/GameClientDiskGate.swift")
+  "$project_dir/Sources/GameClientDiskGate.swift" \
+  "$project_dir/Sources/GGMDataParam.swift" \
+  "$project_dir/Sources/GGMManifest.swift" \
+  "$project_dir/Sources/GGMManifestStore.swift" \
+  "$project_dir/Sources/GGMManifestUpdater.swift")
 
 swiftc -swift-version 5 \
     -sdk "$sdk" \
@@ -44,6 +48,7 @@ swiftc -swift-version 5 \
 
 cp "$resource_dir/Info.plist" "$app_dir/Contents/Info.plist"
 cp "$modern_resources/GameImages/"* "$app_dir/Contents/Resources/GameImages/"
+cp "$modern_resources/ggm-manifest.json" "$app_dir/Contents/Resources/ggm-manifest.json"
 
 # Icon: same squircle sizing as Modern build.sh so Dock silhouette matches neighbours.
 icon_source="$modern_resources/AppIcon.png"

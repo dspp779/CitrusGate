@@ -223,6 +223,103 @@ enum BeanfunWebStartOTP {
         var seen = Set<String>()
         return names.filter { seen.insert($0).inserted }
     }
+
+    static func schemeURI(region: String, sn: String, command: String, data: String) -> String {
+        "gamaniagames://Region=\(region)&&&&SN=\(sn)&&&&Cmd=\(command)&&&&Data=\(data)"
+    }
+
+    static var defaultWebStartPath: String {
+        NSHomeDirectory()
+            + "/Library/Application Support/Cyder/bottles/shared/drive_c/Program Files"
+            + "/gamania Games/gamania Games Manager/GGMWebStart.exe"
+    }
+
+    static let webStartPathFinderHelp = """
+    在 Cyder 安裝 gamania Games Manager 後，預設位置是：
+    ~/Library/Application Support/Cyder/bottles/shared/drive_c/Program Files/gamania Games/gamania Games Manager/GGMWebStart.exe
+
+    也可在 Finder 按 ⌘F 搜尋「GGMWebStart.exe」，或按「選擇…」從 Cyder bottle 的 drive_c → Program Files → gamania Games → gamania Games Manager 選取。請選這個檔，不要選 MapleStory.exe。
+    """
+
+    static func resolvedWebStartPath(stored: String) -> String {
+        let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? defaultWebStartPath : trimmed
+    }
+
+    static func missingWebStartPathDescription(path: String) -> String {
+        "找不到 GGMWebStart.exe：\(path)\n\n\(webStartPathFinderHelp)"
+    }
+
+    static func openArguments(uri: String, webStartPath: String) -> [String] {
+        OpenLaunchArguments.build(
+            executablePath: webStartPath,
+            gameArguments: [uri],
+            launcher: .cyder
+        )
+    }
+
+    static func openSchemeArguments(uri: String) -> [String] {
+        ["-n", uri]
+    }
+
+    static func cyderOpenCommand(
+        uri: String,
+        webStartPath: String = defaultWebStartPath
+    ) -> String {
+        "open -n -b \(LaunchCommandBuilder.shellQuote(OpenLauncher.cyderBundleIdentifier)) "
+            + "\(LaunchCommandBuilder.shellQuote(webStartPath)) "
+            + "--args \(LaunchCommandBuilder.shellQuote(uri))"
+    }
+
+    static func schemeOpenCommand(uri: String) -> String {
+        "open -n \(LaunchCommandBuilder.shellQuote(uri))"
+    }
+
+    static func supportServiceCodes(from html: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"supportService\s*=\s*\[([^\]]+)\]"#),
+              let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+              let innerRange = Range(match.range(at: 1), in: html) else {
+            return []
+        }
+        return String(html[innerRange])
+            .split(separator: ",")
+            .map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+            }
+            .filter { !$0.isEmpty }
+    }
+
+    static func ggmCommand(serviceCode: String, html: String) -> String {
+        supportServiceCodes(from: html).contains(serviceCode) ? "06006" : "06004"
+    }
+
+    static let otpV2URL =
+        "https://tw.beanfun.com/beanfun_block/generic_handlers/get_webstart_otp_v2.ashx"
+
+    static let fallbackManifest = GGMManifest.fallback()
+    static let ggmClientVersion = fallbackManifest.mapleStory.ggmClientVersion
+    static let ggmWebStartDLLHash = fallbackManifest.mapleStory.ggmWebStartDllSha256
+
+    static func otpV2RequestBody(
+        sn: String,
+        launchTicket: String,
+        hash: String = ggmWebStartDLLHash,
+        cv: String = ggmClientVersion,
+        arch: String = "x64"
+    ) -> Data {
+        let ordered: [(String, String)] = [
+            ("SN", sn),
+            ("LaunchTicket", launchTicket),
+            ("CV", cv),
+            ("Hash", hash),
+            ("arch", arch),
+        ]
+        let inner = ordered.map { key, value in
+            "\"\(key)\":\"\(value)\""
+        }.joined(separator: ",")
+        return Data("{\(inner)}".utf8)
+    }
 }
 
 final class BeanfunClient {
@@ -237,11 +334,16 @@ final class BeanfunClient {
     private var session: URLSession
     private var cookieStorage: HTTPCookieStorage
     private let logHandler: (String) -> Void
+    private let manifestProvider: () -> GGMManifest
     private var activeQRSession: BeanfunQRSession?
     private var generation: UInt64 = 0
 
-    init(log: @escaping (String) -> Void) {
+    init(
+        log: @escaping (String) -> Void,
+        manifest: @escaping () -> GGMManifest = { GGMManifest.fallback() }
+    ) {
         logHandler = log
+        manifestProvider = manifest
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = true
         configuration.httpCookieAcceptPolicy = .always
@@ -799,6 +901,13 @@ final class BeanfunClient {
                 } else {
                     self.log("  m_objData.data \(start.ggmData.count) chars")
                 }
+                let launch = BeanfunWebStartOTP.launchObject(from: page)
+                if let launch {
+                    self.log("  GGM URI 已可啟動：Region=\(launch.region) SN=\(launch.sn) Data=\(launch.data.count) chars")
+                    if let launchTicket = try? GGMDataParam.launchTicket(from: launch.data) {
+                        self.log("  Data 離線解密：LaunchTicket=\(launchTicket.count) chars")
+                    }
+                }
                 if ppppp != Self.ppppp {
                     self.log("  step2 內嵌 ppppp 與內建常數不同，改用頁面值")
                 }
@@ -809,7 +918,17 @@ final class BeanfunClient {
                     self.finish(completion, .failure(BeanfunError.parse("step2 回傳帳號與所選帳號不同")))
                     return
                 }
-                self.fetchOTPStep2(start: start, step2URL: step2URL, ppppp: ppppp, account: account, game: game, gen: gen, completion: completion)
+                self.fetchOTPStep2(
+                    start: start,
+                    step2URL: step2URL,
+                    step2HTML: page,
+                    launch: launch,
+                    ppppp: ppppp,
+                    account: account,
+                    game: game,
+                    gen: gen,
+                    completion: completion
+                )
             }
         }
     }
@@ -817,6 +936,8 @@ final class BeanfunClient {
     private func fetchOTPStep2(
         start: GameStartData,
         step2URL: URL,
+        step2HTML: String,
+        launch: BeanfunWebStartOTP.LaunchObject?,
         ppppp: String,
         account: GameAccount,
         game: GameDefinition,
@@ -848,6 +969,8 @@ final class BeanfunClient {
                 self.fetchOTPStep3(
                     start: start,
                     step2URL: step2URL,
+                    step2HTML: step2HTML,
+                    launch: launch,
                     secretCode: secretCode,
                     ppppp: ppppp,
                     account: account,
@@ -862,6 +985,8 @@ final class BeanfunClient {
     private func fetchOTPStep3(
         start: GameStartData,
         step2URL: URL,
+        step2HTML: String,
+        launch: BeanfunWebStartOTP.LaunchObject?,
         secretCode: String,
         ppppp: String,
         account: GameAccount,
@@ -869,6 +994,7 @@ final class BeanfunClient {
         gen: UInt64,
         completion: @escaping (Result<OTPResult, Error>) -> Void
     ) {
+        _ = step2HTML
         log("[OTP 3/6] 登記遊戲啟動")
         guard let recordURL = try? makeURL("https://\(Self.host)/beanfun_block/generic_handlers/record_service_start.ashx") else {
             finish(completion, .failure(BeanfunError.invalidURL("record_service_start.ashx")))
@@ -914,6 +1040,7 @@ final class BeanfunClient {
                 self.fetchOTPStep4(
                     start: start,
                     step2URL: step2URL,
+                    launch: launch,
                     secretCode: secretCode,
                     ppppp: ppppp,
                     account: account,
@@ -928,6 +1055,7 @@ final class BeanfunClient {
     private func fetchOTPStep4(
         start: GameStartData,
         step2URL: URL,
+        launch: BeanfunWebStartOTP.LaunchObject?,
         secretCode: String,
         ppppp: String,
         account: GameAccount,
@@ -960,6 +1088,14 @@ final class BeanfunClient {
             }
         }
         log("  LongPolling 已開始；主流程繼續")
+        if game.id == GameDefinition.mapleStory.id {
+            guard let launch else {
+                finish(completion, .failure(BeanfunError.parse("step2 沒有 m_objData，無法以 otp_v2 取得 OTP")))
+                return
+            }
+            fetchOTPV2(launch: launch, account: account, game: game, gen: gen, completion: completion)
+            return
+        }
         fetchOTPStep5(
             start: start,
             step2URL: step2URL,
@@ -1069,6 +1205,225 @@ final class BeanfunClient {
         }
     }
 
+    func prepareGGMLaunchTicket(
+        for account: GameAccount,
+        game: GameDefinition,
+        completion: @escaping (Result<GGMLaunchTicket, Error>) -> Void
+    ) {
+        guard game.id == GameDefinition.mapleStory.id else {
+            finish(completion, .failure(BeanfunError.parse("gamaniagames 啟動僅支援新楓之谷")))
+            return
+        }
+        let gen = generation
+        log("[OTP 1/6] 準備 \(game.name) 的 gamaniagames://：id=\(account.id)，sn=\(account.sn)")
+        guard let step2URL = try? url(
+            "https://\(Self.host)/beanfun_block/game_zone/game_start_step2.aspx",
+            query: [
+                "service_code": game.serviceCode,
+                "service_region": game.serviceRegion,
+                "sotp": account.sn,
+                "dt": Self.method2Timestamp(),
+            ]
+        ) else {
+            finish(completion, .failure(BeanfunError.invalidURL("game_start_step2.aspx")))
+            return
+        }
+        request(step2URL) { [weak self] result in
+            guard let self = self, self.generation == gen else { return }
+            switch result {
+            case let .failure(error):
+                self.finish(completion, .failure(error))
+            case let .success(step2Response):
+                guard let page = try? self.text(step2Response.data),
+                      let start = try? self.parseStartData(page),
+                      let launch = BeanfunWebStartOTP.launchObject(from: page) else {
+                    self.finish(completion, .failure(BeanfunError.parse("step2 沒有 m_objData，無法以 gamaniagames:// 啟動")))
+                    return
+                }
+                guard start.accountID == account.id, start.sn == account.sn else {
+                    self.finish(completion, .failure(BeanfunError.parse("step2 回傳帳號與所選帳號不同")))
+                    return
+                }
+                let ticket = GGMLaunchTicket(
+                    region: launch.region,
+                    sn: launch.sn,
+                    command: BeanfunWebStartOTP.ggmCommand(serviceCode: game.serviceCode, html: page),
+                    data: launch.data
+                )
+                self.recordServiceStart(
+                    start: start,
+                    step2URL: step2URL,
+                    game: game,
+                    gen: gen
+                ) { recordResult in
+                    switch recordResult {
+                    case let .failure(error):
+                        self.finish(completion, .failure(error))
+                    case .success:
+                        self.startLongPolling(start: start, step2URL: step2URL, gen: gen)
+                        self.log("  已準備 GGM URI，未 POST otp_v2（票券留給 GGMWebStart）")
+                        self.finish(completion, .success(ticket))
+                    }
+                }
+            }
+        }
+    }
+
+    private func recordServiceStart(
+        start: GameStartData,
+        step2URL: URL,
+        game: GameDefinition,
+        gen: UInt64,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        log("[OTP 3/6] 登記遊戲啟動")
+        guard let recordURL = try? makeURL("https://\(Self.host)/beanfun_block/generic_handlers/record_service_start.ashx") else {
+            finish(completion, .failure(BeanfunError.invalidURL("record_service_start.ashx")))
+            return
+        }
+        request(
+            recordURL,
+            method: "POST",
+            form: [
+                "service_code": game.serviceCode,
+                "service_region": game.serviceRegion,
+                "service_account_id": start.accountID,
+                "sotp": start.sn,
+                "service_account_display_name": start.displayName,
+                "service_account_create_time": start.createTime,
+                start.guardName: start.guardValue,
+            ],
+            referer: step2URL,
+            sensitiveFormKeys: [start.guardName]
+        ) { [weak self] result in
+            guard let self = self, self.generation == gen else { return }
+            switch result {
+            case let .failure(error):
+                self.finish(completion, .failure(error))
+            case let .success(recordResponse):
+                guard let recordText = try? self.text(recordResponse.data) else {
+                    self.finish(completion, .failure(BeanfunError.parse("HTTP response 不是 UTF-8")))
+                    return
+                }
+                guard recordText.range(
+                    of: #"['"]?intResult['"]?\s*:\s*1"#,
+                    options: .regularExpression
+                ) != nil else {
+                    let lower = recordText.lowercased()
+                    if lower.contains("登入") || lower.contains("逾時") || lower.contains("session") || lower.contains("expired") {
+                        self.finish(completion, .failure(BeanfunError.expired(BeanfunError.defaultExpiredMessage)))
+                        return
+                    }
+                    self.finish(completion, .failure(BeanfunError.rejected("record_service_start：\(recordText.prefix(300))")))
+                    return
+                }
+                self.log("  record_service_start：Success")
+                self.finish(completion, .success(()))
+            }
+        }
+    }
+
+    private func startLongPolling(start: GameStartData, step2URL: URL, gen: UInt64) {
+        log("[OTP 4/6] 背景啟動 LongPolling")
+        guard let pollURL = try? url(
+            "https://\(Self.host)/generic_handlers/get_result.ashx",
+            query: [
+                "meth": "GetResultByLongPolling",
+                "key": start.longPollingKey,
+                "_": Self.loginTimestamp(),
+            ]
+        ) else {
+            log("  LongPolling URL 無效")
+            return
+        }
+        request(pollURL, referer: step2URL) { [weak self] result in
+            guard let self = self, self.generation == gen else { return }
+            switch result {
+            case let .success(response):
+                self.log("  LongPolling 背景回應：\((try? self.text(response.data))?.prefix(240) ?? "")")
+            case let .failure(error):
+                self.log("  LongPolling 背景結束：\(error.localizedDescription)")
+            }
+        }
+        log("  LongPolling 已開始；主流程繼續")
+    }
+
+    private func fetchOTPV2(
+        launch: BeanfunWebStartOTP.LaunchObject,
+        account: GameAccount,
+        game: GameDefinition,
+        gen: UInt64,
+        completion: @escaping (Result<OTPResult, Error>) -> Void
+    ) {
+        log("[OTP 5/6] 離線解密 Data 並 POST get_webstart_otp_v2.ashx")
+        let launchTicket: String
+        do {
+            launchTicket = try GGMDataParam.launchTicket(from: launch.data)
+        } catch {
+            finish(completion, .failure(error))
+            return
+        }
+        let manifest = manifestProvider()
+        secret("  LaunchTicket=\(launchTicket)")
+        secret("  otp_v2 SN=\(launch.sn)")
+        log("  GGM manifest：CV=\(manifest.mapleStory.ggmClientVersion) Hash=\(manifest.mapleStory.ggmWebStartDllSha256.prefix(8))…")
+        guard let url = URL(string: BeanfunWebStartOTP.otpV2URL) else {
+            finish(completion, .failure(BeanfunError.invalidURL(BeanfunWebStartOTP.otpV2URL)))
+            return
+        }
+        let body = BeanfunWebStartOTP.otpV2RequestBody(
+            sn: launch.sn,
+            launchTicket: launchTicket,
+            hash: manifest.mapleStory.ggmWebStartDllSha256,
+            cv: manifest.mapleStory.ggmClientVersion
+        )
+        request(
+            url,
+            method: "POST",
+            rawBody: body,
+            contentType: "application/json; charset=utf-8",
+            sendCookies: false
+        ) { [weak self] result in
+            guard let self = self, self.generation == gen else { return }
+            switch result {
+            case let .failure(error):
+                self.finish(completion, .failure(error))
+            case let .success(response):
+                self.finishOTPV2(data: response.data, account: account, game: game, completion: completion)
+            }
+        }
+    }
+
+    private func finishOTPV2(
+        data: Data,
+        account: GameAccount,
+        game: GameDefinition,
+        completion: @escaping (Result<OTPResult, Error>) -> Void
+    ) {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            finish(completion, .failure(BeanfunError.parse("otp_v2 回應不是 JSON")))
+            return
+        }
+        let resultCode = (object["result"] as? NSNumber)?.intValue ?? object["result"] as? Int
+        let message = object["message"] as? String
+        guard resultCode == 1, let envelope = object["data"] as? String else {
+            let reason = message ?? String(data: data, encoding: .utf8) ?? "未知錯誤"
+            finish(completion, .failure(BeanfunError.rejected(reason)))
+            return
+        }
+        log("  otp_v2 成功：data=\(envelope.count) chars")
+        log("[OTP 6/6] DES-ECB 解密")
+        do {
+            let otp = try GGMDataParam.decryptOTPEnvelope(envelope)
+            let commandLine = game.commandLine(accountID: account.id, otp: otp)
+            log("  OTP 解密成功：\(otp.count) 字元")
+            secret("  OTP=\(otp)")
+            finish(completion, .success(OTPResult(value: otp, retrievedAt: Date(), commandLine: commandLine)))
+        } catch {
+            finish(completion, .failure(error))
+        }
+    }
+
     private func parseStartData(_ page: String) throws -> GameStartData {
         do {
             let key = try capture(
@@ -1135,19 +1490,24 @@ final class BeanfunClient {
         method: String = "GET",
         form: [String: String]? = nil,
         json: [String: Any]? = nil,
+        rawBody: Data? = nil,
+        contentType: String? = nil,
         referer: URL? = nil,
         headers: [String: String] = [:],
         sensitiveFormKeys: Set<String> = [],
+        sendCookies: Bool = true,
         completion: @escaping (Result<HTTPResult, Error>) -> Void
     ) {
-        if form != nil && json != nil {
+        let bodyCount = [form != nil, json != nil, rawBody != nil].filter { $0 }.count
+        if bodyCount > 1 {
             DispatchQueue.main.async {
-                completion(.failure(BeanfunError.parse("HTTP request 不能同時使用 form 與 JSON")))
+                completion(.failure(BeanfunError.parse("HTTP request 不能同時使用多種 body")))
             }
             return
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
+        request.httpShouldHandleCookies = sendCookies
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         if let referer {
@@ -1173,6 +1533,12 @@ final class BeanfunClient {
                 return
             }
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        } else if let rawBody {
+            request.httpBody = rawBody
+            request.setValue(
+                contentType ?? "application/json; charset=utf-8",
+                forHTTPHeaderField: "Content-Type"
+            )
         }
 
         log("  → \(method) \(includeSecrets ? url.absoluteString : Self.redactedURL(url))")

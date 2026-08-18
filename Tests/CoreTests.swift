@@ -47,9 +47,11 @@ enum CoreTests {
         try testGGMManifestValidationAndOrdering()
         try testGGMManifestDecodesPublishedJSON()
         try testGGMManifestStoreRoundTrip()
+        try testGGMManifestStoreCacheFolderName()
+        try testGGMManifestJSONSerializationRoundTrip()
         try testGGMWebStartPathResolution()
         try testGGMDecryptLaunchData()
-        print("CoreTests: 46 tests passed")
+        print("CoreTests: 48 tests passed")
     }
 
 
@@ -1240,6 +1242,62 @@ enum CoreTests {
         try expect(cachedManifest == manifest, "manifest cache round-trip")
         try expect(cachedMetadata == metadata, "metadata cache round-trip")
         try expect(fallback.isValid, "fallback manifest should load")
+        let defaultDir = try store.cacheDirectory()
+        try expect(
+            defaultDir.lastPathComponent == GGMManifestStore.modernCacheFolderName,
+            "default cache folder must be Beanfun OTP"
+        )
+    }
+
+    private static func testGGMManifestStoreCacheFolderName() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = GGMManifestStore(
+            fileManager: .default,
+            bundle: .main,
+            cacheFolderName: GGMManifestStore.legacyCacheFolderName,
+            appSupportRoot: root
+        )
+        let dir = try store.cacheDirectory()
+        try expect(
+            dir.lastPathComponent == "Beanfun OTP Legacy",
+            "legacy cache folder must be Beanfun OTP Legacy, got \(dir.lastPathComponent)"
+        )
+        try expect(
+            dir.path.hasPrefix(root.path),
+            "legacy cache must live under the injected app-support root"
+        )
+    }
+
+    private static func testGGMManifestJSONSerializationRoundTrip() throws {
+        let json = """
+        {
+          "schemaVersion": 1,
+          "updatedAt": "2026-08-18T00:00:00Z",
+          "maplestory": {
+            "ggmClientVersion": "1.5.0.2",
+            "ggmWebStartDllSha256": "dfd568a69d87abcd8f4a93d1a4481ebb57712d1d28ab0b6fc018fcf140101e06"
+          }
+        }
+        """
+        let decoded = try GGMManifest.fromJSONData(Data(json.utf8))
+        try expect(decoded.isValid, "JSONSerialization decode must produce a valid manifest")
+        try expect(decoded.mapleStory.ggmClientVersion == "1.5.0.2", "CV from JSONSerialization")
+        let encoded = try decoded.jsonData()
+        let roundTrip = try GGMManifest.fromJSONData(encoded)
+        try expect(roundTrip == decoded, "JSONSerialization encode/decode round-trip")
+
+        let metadata = GGMManifestCacheMetadata(
+            etag: "\"abc\"",
+            lastModified: "Tue, 18 Aug 2026 09:20:00 GMT",
+            fetchedAt: "2026-08-18T17:30:00Z"
+        )
+        let metadataData = try metadata.jsonData()
+        let metadataRoundTrip = try GGMManifestCacheMetadata.fromJSONData(metadataData)
+        try expect(metadataRoundTrip == metadata, "metadata JSONSerialization round-trip")
     }
 
     private static func testGGMWebStartPathResolution() throws {

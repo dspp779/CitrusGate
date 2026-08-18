@@ -45,5 +45,45 @@ struct GGMManifest: Codable, Equatable {
         return lhs > rhs
     }
 
+    static func fromJSONData(_ data: Data) throws -> GGMManifest {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw BeanfunError.parse("GGM manifest 不是 JSON object")
+        }
+        guard let schemaVersion = intValue(object["schemaVersion"]) else {
+            throw BeanfunError.parse("GGM manifest 缺少 schemaVersion")
+        }
+        guard let updatedAt = object["updatedAt"] as? String else {
+            throw BeanfunError.parse("GGM manifest 缺少 updatedAt")
+        }
+        guard let maple = object["maplestory"] as? [String: Any],
+              let cv = maple["ggmClientVersion"] as? String,
+              let hash = maple["ggmWebStartDllSha256"] as? String else {
+            throw BeanfunError.parse("GGM manifest 缺少 maplestory 欄位")
+        }
+        return GGMManifest(
+            schemaVersion: schemaVersion,
+            updatedAt: updatedAt,
+            mapleStory: .init(ggmClientVersion: cv, ggmWebStartDllSha256: hash)
+        )
+    }
+
+    func jsonData() throws -> Data {
+        let object: [String: Any] = [
+            "schemaVersion": schemaVersion,
+            "updatedAt": updatedAt,
+            "maplestory": [
+                "ggmClientVersion": mapleStory.ggmClientVersion,
+                "ggmWebStartDllSha256": mapleStory.ggmWebStartDllSha256,
+            ],
+        ]
+        return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted])
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        if let number = value as? Int { return number }
+        if let number = value as? NSNumber { return number.intValue }
+        return nil
+    }
+
     private static let timestampFormatter = ISO8601DateFormatter()
 }

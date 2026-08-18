@@ -47,6 +47,7 @@ swiftc "${common_flags[@]}" -target x86_64-apple-macosx13.0 \
 
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$resource_dir/Info.plist" "$app_dir/Contents/Info.plist"
+cp "$resource_dir/ggm-manifest.json" "$app_dir/Contents/Resources/ggm-manifest.json"
 mkdir -p "$app_dir/Contents/Resources/GameImages"
 cp "$resource_dir/GameImages"/* "$app_dir/Contents/Resources/GameImages/"
 

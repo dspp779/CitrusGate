@@ -29,6 +29,8 @@ final class AppModel: ObservableObject {
         "/Library/Application Support/Nexon/Plug/NexonPlug.app"
     private static let nexonPlugScheme = "NexonPlug"
     private static let beanfunOTPBundleID = "local.ogom.beanfunotp"
+    private static let ggmManifestURLString =
+        "https://raw.githubusercontent.com/dspp779/CitrusGate/main/metadata/ggm-manifest.json"
 
     enum QuarantineStatus: Equatable {
         case notQuarantined
@@ -97,6 +99,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var isNexonPlugHandler = false
 
     private let defaults: UserDefaults
+    private let ggmManifestStore = GGMManifestStore()
+    private var ggmManifestUpdater: GGMManifestUpdater?
+    private var activeGGMManifest = GGMManifest.fallback()
+    private var didStartManifestRefresh = false
     private var pendingClassicPassargTokens: [String]?
     // AppDelegate.application(_:open:) and .onOpenURL can both deliver the
     // same cold-start URL; dedupe by absoluteString within a short window
@@ -120,6 +126,9 @@ final class AppModel: ObservableObject {
         },
         ggmLaunch: { [weak self] ticket in
             self?.ggmTicketState = .consumed(ticket)
+        },
+        manifest: { [weak self] in
+            self?.activeGGMManifest ?? GGMManifest.fallback()
         }
     )
     private lazy var nxdlDownloader = NxdlDownloader { [weak self] message in
@@ -142,6 +151,23 @@ final class AppModel: ObservableObject {
             advancedLaunchCommandStyle = style
         } else {
             advancedLaunchCommandStyle = .open
+        }
+        do {
+            let fallback = try ggmManifestStore.loadFallbackManifest()
+            activeGGMManifest = fallback
+            if let cached = try ggmManifestStore.loadCachedManifest(),
+               cached.isNewer(than: fallback) {
+                activeGGMManifest = cached
+            }
+        } catch {
+            activeGGMManifest = GGMManifest.fallback()
+        }
+        if let url = URL(string: Self.ggmManifestURLString) {
+            ggmManifestUpdater = GGMManifestUpdater(
+                manifestURL: url,
+                store: ggmManifestStore,
+                log: { [weak self] message in self?.appendLog(message) }
+            )
         }
     }
 
@@ -181,6 +207,15 @@ final class AppModel: ObservableObject {
     func handleInitialAppearance() {
         // General mode intentionally starts at game selection. Requesting an
         // executable before that would make it unclear which game is being set.
+        guard !didStartManifestRefresh else { return }
+        didStartManifestRefresh = true
+        Task { [weak self] in
+            guard let self, let updater = self.ggmManifestUpdater else { return }
+            let updated = await updater.refreshIfNeeded(current: self.activeGGMManifest)
+            await MainActor.run {
+                self.activeGGMManifest = updated
+            }
+        }
     }
 
     func setMode(_ newMode: AppMode) {

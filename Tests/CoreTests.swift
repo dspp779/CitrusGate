@@ -44,9 +44,11 @@ enum CoreTests {
         try testWebStartOTPExtractsPPPPPFromPage()
         try testGGMLaunchTicketURI()
         try testGGMLaunchTicketState()
+        try testGGMManifestValidationAndOrdering()
+        try testGGMManifestStoreRoundTrip()
         try testGGMWebStartPathResolution()
         try testGGMDecryptLaunchData()
-        print("CoreTests: 43 tests passed")
+        print("CoreTests: 45 tests passed")
     }
 
 
@@ -1146,6 +1148,73 @@ enum CoreTests {
         try expect(state.ticket?.data == "ABCDEF", "consumed state keeps Data for display")
         state.consume()
         try expect(state.isUsable == false, "consume is idempotent")
+    }
+
+    private static func testGGMManifestValidationAndOrdering() throws {
+        let fallback = GGMManifest.fallback()
+        try expect(fallback.isValid, "fallback manifest must be valid")
+        try expect(
+            fallback.mapleStory.ggmWebStartDllSha256.count == 64,
+            "fallback hash must be 64 chars"
+        )
+
+        let newer = GGMManifest(
+            schemaVersion: 1,
+            updatedAt: "2026-08-19T00:00:00Z",
+            mapleStory: .init(
+                ggmClientVersion: "1.5.0.3",
+                ggmWebStartDllSha256: String(repeating: "a", count: 64)
+            )
+        )
+        try expect(newer.isValid, "newer manifest must be valid")
+        try expect(newer.isNewer(than: fallback), "newer manifest ordering")
+
+        let invalid = GGMManifest(
+            schemaVersion: 1,
+            updatedAt: "oops",
+            mapleStory: .init(
+                ggmClientVersion: "",
+                ggmWebStartDllSha256: "xyz"
+            )
+        )
+        try expect(invalid.isValid == false, "invalid manifest should fail validation")
+    }
+
+    private static func testGGMManifestStoreRoundTrip() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = GGMManifestStore(
+            fileManager: .default,
+            bundle: .main,
+            appSupportRoot: root
+        )
+        let empty = try store.loadCachedManifest()
+        try expect(empty == nil, "cache should start empty")
+
+        let manifest = GGMManifest(
+            schemaVersion: 1,
+            updatedAt: "2026-08-19T00:00:00Z",
+            mapleStory: .init(
+                ggmClientVersion: "1.5.0.3",
+                ggmWebStartDllSha256: String(repeating: "b", count: 64)
+            )
+        )
+        let metadata = GGMManifestCacheMetadata(
+            etag: "\"etag-1\"",
+            lastModified: "Tue, 18 Aug 2026 09:20:00 GMT",
+            fetchedAt: "2026-08-18T17:30:00Z"
+        )
+
+        try store.saveCachedManifest(manifest, metadata: metadata)
+        let cachedManifest = try store.loadCachedManifest()
+        let cachedMetadata = try store.loadCachedMetadata()
+        let fallback = try store.loadFallbackManifest()
+        try expect(cachedManifest == manifest, "manifest cache round-trip")
+        try expect(cachedMetadata == metadata, "metadata cache round-trip")
+        try expect(fallback.isValid, "fallback manifest should load")
     }
 
     private static func testGGMWebStartPathResolution() throws {

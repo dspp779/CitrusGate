@@ -18,6 +18,9 @@ swiftc -swift-version 5 -sdk "$sdk" -module-cache-path "$module_cache" \
     "$project_dir/Sources/DESCipher.swift" \
     "$project_dir/Sources/NexonPlugURLParser.swift" \
     "$project_dir/Sources/MapleStoryWineLauncher.swift" \
+    "$project_dir/Sources/GGMManifest.swift" \
+    "$project_dir/Sources/GGMManifestStore.swift" \
+    "$project_dir/Sources/GGMManifestUpdater.swift" \
     "$project_dir/Sources/BeanfunClient.swift" \
     "$project_dir/Sources/NxdlDownloader.swift" \
     "$project_dir/Sources/GameClientDiskGate.swift" \

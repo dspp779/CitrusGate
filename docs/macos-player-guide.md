@@ -134,6 +134,7 @@ wine --bottle maplestory \
   （對應 macOS：`~/Documents/ggm`）
 - 過程中若提示安裝 **.NET Desktop Runtime / .NET Framework 6**，請接受並完成安裝。
 - 安裝完成後，管理器主程式通常是 `GGMWebStart.exe`。
+- Beanfun OTP 會在啟動時檢查同 repo 的 GGM manifest 更新，成功後快取到本機；GitHub 暫時不可用時，會回退到本機快取或 app 內建值，不影響原生 OTP 流程。
 
 之後若要再開管理器：
 

@@ -16,7 +16,7 @@
    - **`otp_v2` POST 的 `SN` 取自 URL Scheme 的 `SN=` 參數**（`m_objData.sn`），**不在** `Data` 解密後的明文裡。
 4. **客戶端完整性校驗**：
    - 向 `get_webstart_otp_v2.ashx` 請求時，必須附帶 `CV`（版本號，目前 GGM 1.5.0.2 為 `1.5.0.2`）、`arch`（`x64`/`x86`）以及 `GGMWebStart.dll` 的 SHA-256 二進位檔案雜湊 `Hash`。
-   - Beanfun OTP 將 GGM 1.5.0.2 的 `Hash` **預先寫死**（`dfd568a69d87abcd8f4a93d1a4481ebb57712d1d28ab0b6fc018fcf140101e06`），runtime 不讀本機 dll，因此原生 OTP 不需安裝 Games Manager。
+   - Beanfun OTP 內建 fallback manifest，並在啟動時從同 repo 的 `metadata/ggm-manifest.json` 檢查更新；若 GitHub 無法連線，則回退到本機快取或內建值。runtime 不讀本機 dll，因此原生 OTP 不需安裝 Games Manager。
    - **請求不帶 Cookie**（與舊版 GET `get_webstart_otp.ashx` 不同）。
 5. **OTP 密文解密**：
    - `get_webstart_otp_v2.ashx` 回傳 40 字元 `data` 欄位，以前 8 字元為 Key、後 32 字元 Hex 為密文，進行 DES-ECB 解密取得明文 OTP。
@@ -100,7 +100,7 @@ Table 7: "df1468ace0357b92"
 - **`CV`**：組件版本號（目前 Cyder 內建 GGM 1.5.0.2 為 **`1.5.0.2`**）
 - **`Hash`**：讀取 `GGMWebStart.dll` 二進位資料計算 SHA-256 雜湊值（64 字元 Hex）：
   $$\text{Hash} = \text{SHA256}(\text{ReadAllBytes}(\text{"GGMWebStart.dll"}))$$
-  Beanfun OTP 不在 runtime 讀檔，改使用 GGM 1.5.0.2 預先計算值  
+  Beanfun OTP 不在 runtime 讀檔；實作上改讀啟動時載入的 active manifest。預設 fallback 值目前為  
   `dfd568a69d87abcd8f4a93d1a4481ebb57712d1d28ab0b6fc018fcf140101e06`。
 
 ### 4.2 發送 OTP 請求（`StartGameCommand::a`，RVA: `0x2958`）

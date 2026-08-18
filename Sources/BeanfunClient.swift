@@ -115,13 +115,9 @@ enum BeanfunWebStartOTP {
     static let otpV2URL =
         "https://tw.beanfun.com/beanfun_block/generic_handlers/get_webstart_otp_v2.ashx"
 
-    /// Matches GGM 1.5.0.2 captures; used for `CV` on otp_v2 POST.
-    static let ggmClientVersion = "1.5.0.2"
-
-    /// SHA-256 of GGM 1.5.0.2 `GGMWebStart.dll`. Baked in so native OTP does not
-    /// require Games Manager to be installed.
-    static let ggmWebStartDLLHash =
-        "dfd568a69d87abcd8f4a93d1a4481ebb57712d1d28ab0b6fc018fcf140101e06"
+    static let fallbackManifest = GGMManifest.fallback()
+    static let ggmClientVersion = fallbackManifest.mapleStory.ggmClientVersion
+    static let ggmWebStartDLLHash = fallbackManifest.mapleStory.ggmWebStartDllSha256
 
     static func otpV2RequestBody(
         sn: String,
@@ -459,14 +455,17 @@ final class BeanfunClient {
     private var cookieStorage: HTTPCookieStorage
     private let logHandler: (String) -> Void
     private let ggmLaunchHandler: (GGMLaunchTicket) -> Void
+    private let manifestProvider: () -> GGMManifest
     private var activeQRSession: BeanfunQRSession?
 
     init(
         log: @escaping (String) -> Void,
-        ggmLaunch: @escaping (GGMLaunchTicket) -> Void = { _ in }
+        ggmLaunch: @escaping (GGMLaunchTicket) -> Void = { _ in },
+        manifest: @escaping () -> GGMManifest = { GGMManifest.fallback() }
     ) {
         logHandler = log
         ggmLaunchHandler = ggmLaunch
+        manifestProvider = manifest
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = true
         configuration.httpCookieAcceptPolicy = .always
@@ -964,15 +963,18 @@ final class BeanfunClient {
     ) async throws -> OTPResult {
         log("[OTP 5/6] 離線解密 Data 並 POST get_webstart_otp_v2.ashx")
         let launchTicket = try GGMDataParam.launchTicket(from: launchData)
+        let manifest = manifestProvider()
         secret("  LaunchTicket=\(launchTicket)")
         secret("  otp_v2 SN=\(schemeSN)")
-        log("  GGMWebStart.dll SHA-256=\(BeanfunWebStartOTP.ggmWebStartDLLHash.prefix(8))…（內建）")
+        log("  GGM manifest：CV=\(manifest.mapleStory.ggmClientVersion) Hash=\(manifest.mapleStory.ggmWebStartDllSha256.prefix(8))…")
         guard let url = URL(string: BeanfunWebStartOTP.otpV2URL) else {
             throw BeanfunError.invalidURL(BeanfunWebStartOTP.otpV2URL)
         }
         let body = BeanfunWebStartOTP.otpV2RequestBody(
             sn: schemeSN,
-            launchTicket: launchTicket
+            launchTicket: launchTicket,
+            hash: manifest.mapleStory.ggmWebStartDllSha256,
+            cv: manifest.mapleStory.ggmClientVersion
         )
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

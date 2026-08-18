@@ -45,10 +45,11 @@ enum CoreTests {
         try testGGMLaunchTicketURI()
         try testGGMLaunchTicketState()
         try testGGMManifestValidationAndOrdering()
+        try testGGMManifestDecodesPublishedJSON()
         try testGGMManifestStoreRoundTrip()
         try testGGMWebStartPathResolution()
         try testGGMDecryptLaunchData()
-        print("CoreTests: 45 tests passed")
+        print("CoreTests: 46 tests passed")
     }
 
 
@@ -1178,6 +1179,30 @@ enum CoreTests {
             )
         )
         try expect(invalid.isValid == false, "invalid manifest should fail validation")
+    }
+
+    private static func testGGMManifestDecodesPublishedJSON() throws {
+        let json = """
+        {
+          "schemaVersion": 1,
+          "updatedAt": "2026-08-18T00:00:00Z",
+          "maplestory": {
+            "ggmClientVersion": "1.5.0.2",
+            "ggmWebStartDllSha256": "dfd568a69d87abcd8f4a93d1a4481ebb57712d1d28ab0b6fc018fcf140101e06"
+          }
+        }
+        """
+        let manifest = try JSONDecoder().decode(GGMManifest.self, from: Data(json.utf8))
+        try expect(manifest.isValid, "published JSON must decode as a valid manifest")
+        try expect(
+            manifest.mapleStory.ggmClientVersion == "1.5.0.2",
+            "published JSON must read CV from maplestory"
+        )
+        try expect(
+            manifest.mapleStory.ggmWebStartDllSha256
+                == "dfd568a69d87abcd8f4a93d1a4481ebb57712d1d28ab0b6fc018fcf140101e06",
+            "published JSON must read hash from maplestory"
+        )
     }
 
     private static func testGGMManifestStoreRoundTrip() throws {

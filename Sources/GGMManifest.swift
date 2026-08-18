@@ -10,6 +10,12 @@ struct GGMManifest: Codable, Equatable {
     let updatedAt: String
     let mapleStory: MapleStoryConfig
 
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case updatedAt
+        case mapleStory = "maplestory"
+    }
+
     static let bundledResourceName = "ggm-manifest"
 
     static func fallback() -> GGMManifest {

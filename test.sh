@@ -2,6 +2,7 @@
 set -euo pipefail
 
 project_dir="${0:A:h}"
+python3 "$project_dir/scripts/test_update_ggm_manifest.py"
 build_dir="$project_dir/.build/tests"
 module_cache="$project_dir/.build/module-cache"
 preferred_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"

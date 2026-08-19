@@ -1,0 +1,47 @@
+name: Check GGM manifest
+
+on:
+  schedule:
+    # 09:00 Taiwan (UTC+8)
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ggm-manifest-check
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install innoextract
+        run: sudo apt-get update && sudo apt-get install -y innoextract
+
+      - name: Check and update GGM manifest
+        id: ggm
+        run: python3 scripts/update_ggm_manifest.py --apply --github-output "$GITHUB_OUTPUT"
+
+      - name: Create pull request
+        if: steps.ggm.outputs.updated == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/ggm-manifest-${{ steps.ggm.outputs.version }}
+          delete-branch: true
+          commit-message: "chore(ggm): update manifest to ${{ steps.ggm.outputs.version }}"
+          title: "chore(ggm): update manifest to ${{ steps.ggm.outputs.version }}"
+          body: |
+            Official GGM setup is now `${{ steps.ggm.outputs.version }}`.
+
+            - `ggmClientVersion`: `${{ steps.ggm.outputs.version }}`
+            - `ggmWebStartDllSha256`: `${{ steps.ggm.outputs.hash }}`
+
+            This updates `metadata/ggm-manifest.json` (live App fetch) and `Resources/ggm-manifest.json` (next-release fallback).
+
+            Do not auto-merge. After merging, installed apps pick up the new CV/Hash on next launch. Please smoke-test MapleStory otp_v2 before merging.

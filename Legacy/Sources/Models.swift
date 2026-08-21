@@ -304,6 +304,11 @@ struct GameStartData {
     let guardName: String
     let guardValue: String
     let ggmData: String
+    /// SecretCode embedded directly in `game_start_step2.aspx`'s `m_objData` JS object.
+    /// This is the SecretCode actually paired with this game-start session; when present
+    /// it must be preferred over any value fetched separately from a different host/session
+    /// (see `get_webstart_otp.ashx` "Secret codes do not match!" rejection).
+    let secretCode: String
 }
 
 enum BeanfunError: LocalizedError {

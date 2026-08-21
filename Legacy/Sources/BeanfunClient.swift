@@ -143,6 +143,13 @@ enum BeanfunWebStartOTP {
         let region: String
         let sn: String
         let data: String
+        /// `m_objData.secretCode`, when the page embeds one. This is the SecretCode already
+        /// paired server-side with this specific game-start session (as opposed to any value
+        /// fetched separately from another host), and must be preferred for the legacy
+        /// `get_webstart_otp.ashx` request used by non-MapleStory games.
+        let secretCode: String?
+        /// `m_objData.webToken`, when present. Kept for the same reason as `secretCode`.
+        let webToken: String?
     }
 
     static func launchObject(from html: String) -> LaunchObject? {
@@ -174,7 +181,13 @@ enum BeanfunWebStartOTP {
               !payload.isEmpty else {
             return nil
         }
-        return LaunchObject(region: region, sn: sn, data: payload)
+        return LaunchObject(
+            region: region,
+            sn: sn,
+            data: payload,
+            secretCode: object["secretCode"] as? String,
+            webToken: object["webToken"] as? String
+        )
     }
 
     static func propertyNames(prefix: String, in html: String) -> [String] {
@@ -945,6 +958,27 @@ final class BeanfunClient {
         completion: @escaping (Result<OTPResult, Error>) -> Void
     ) {
         log("[OTP 2/6] 取得 SecretCode")
+        if !start.secretCode.isEmpty {
+            // Prefer the SecretCode already embedded in game_start_step2.aspx's m_objData —
+            // it's the value actually paired server-side with this game-start session.
+            // Fetching a fresh one from a different host (tw.newlogin.beanfun.com) here
+            // returns a SecretCode tied to a *different* session, which the server later
+            // rejects with "Secret codes do not match!".
+            log("  SecretCode 取自 step2 m_objData（避免另外呼叫 get_cookies.ashx 造成不同 session 的 SecretCode 對不上）")
+            secret("  SecretCode=\(start.secretCode)")
+            secret("  ppppp=\(ppppp)")
+            fetchOTPStep3(
+                start: start,
+                step2URL: step2URL,
+                secretCode: start.secretCode,
+                ppppp: ppppp,
+                account: account,
+                game: game,
+                gen: gen,
+                completion: completion
+            )
+            return
+        }
         guard let secretURL = try? makeURL("https://\(Self.loginHost)/generic_handlers/get_cookies.ashx") else {
             finish(completion, .failure(BeanfunError.invalidURL("get_cookies.ashx")))
             return
@@ -964,6 +998,7 @@ final class BeanfunClient {
                     self.finish(completion, .failure(BeanfunError.parse("找不到 SecretCode")))
                     return
                 }
+                self.log("  step2 未內嵌 secretCode，改用 get_cookies.ashx 取得")
                 self.secret("  SecretCode=\(secretCode)")
                 self.secret("  ppppp=\(ppppp)")
                 self.fetchOTPStep3(
@@ -1457,7 +1492,8 @@ final class BeanfunClient {
             )
             let guardValue = encodedGuard.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
                 ?? encodedGuard
-            let ggmData = BeanfunWebStartOTP.launchObject(from: page)?.data ?? ""
+            let launch = BeanfunWebStartOTP.launchObject(from: page)
+            let ggmData = launch?.data ?? ""
             return GameStartData(
                 longPollingKey: key,
                 accountID: accountID,
@@ -1466,7 +1502,8 @@ final class BeanfunClient {
                 createTime: createTime,
                 guardName: guardName,
                 guardValue: guardValue,
-                ggmData: ggmData
+                ggmData: ggmData,
+                secretCode: launch?.secretCode ?? ""
             )
         } catch {
             let lower = page.lowercased()

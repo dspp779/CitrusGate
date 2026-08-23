@@ -1079,6 +1079,25 @@ enum CoreTests {
         try expect(launch?.region == "TW;Production", "should parse GGM region, got \(String(describing: launch))")
         try expect(launch?.sn == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "should parse GGM sn")
         try expect(launch?.data.count == 34, "should parse GGM data, got \(launch?.data.count ?? -1)")
+
+        // m_objData on the legacy (non-MapleStory) game_start_step2.aspx pages also embeds the
+        // SecretCode/WebToken already paired with this session; launchObject must surface them
+        // so callers don't have to fetch a mismatched SecretCode from a different host.
+        // Use deterministic placeholders only — never commit live Beanfun session values.
+        let mabinogiPage = """
+        var supportService = ['600309'];
+        var m_objData = { "region": "TW;Production", "sn": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", "webToken": "WEBTOKEN000000000000000000000001", "secretCode": "SECRETCODE0000000000000000000001", "data": "ABCDEF0123456789ABCDEF0123456789FF" };
+        """
+        let mabinogiLaunch = BeanfunWebStartOTP.launchObject(from: mabinogiPage)
+        try expect(
+            mabinogiLaunch?.secretCode == "SECRETCODE0000000000000000000001",
+            "should parse m_objData.secretCode, got \(String(describing: mabinogiLaunch?.secretCode))"
+        )
+        try expect(
+            mabinogiLaunch?.webToken == "WEBTOKEN000000000000000000000001",
+            "should parse m_objData.webToken, got \(String(describing: mabinogiLaunch?.webToken))"
+        )
+
         let jsonHints = BeanfunWebStartOTP.pageHints(from: jsonPage)
         try expect(
             jsonHints.contains { $0.contains("m_objData region=TW;Production") && $0.contains("data=34 chars") },

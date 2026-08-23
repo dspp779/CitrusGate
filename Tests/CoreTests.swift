@@ -1083,17 +1083,18 @@ enum CoreTests {
         // m_objData on the legacy (non-MapleStory) game_start_step2.aspx pages also embeds the
         // SecretCode/WebToken already paired with this session; launchObject must surface them
         // so callers don't have to fetch a mismatched SecretCode from a different host.
+        // Use deterministic placeholders only — never commit live Beanfun session values.
         let mabinogiPage = """
         var supportService = ['600309'];
-        var m_objData = { "region": "TW;Production", "sn": "9e8e23d3-08a8-4657-a2a0-edbcb4f114a2", "webToken": "e7388b84fadb40d999f43fbdee7c02d0", "secretCode": "ed3bb8fb6a230a7962185aa8de7c6364", "data": "ABCDEF0123456789ABCDEF0123456789FF" };
+        var m_objData = { "region": "TW;Production", "sn": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", "webToken": "WEBTOKEN000000000000000000000001", "secretCode": "SECRETCODE0000000000000000000001", "data": "ABCDEF0123456789ABCDEF0123456789FF" };
         """
         let mabinogiLaunch = BeanfunWebStartOTP.launchObject(from: mabinogiPage)
         try expect(
-            mabinogiLaunch?.secretCode == "ed3bb8fb6a230a7962185aa8de7c6364",
+            mabinogiLaunch?.secretCode == "SECRETCODE0000000000000000000001",
             "should parse m_objData.secretCode, got \(String(describing: mabinogiLaunch?.secretCode))"
         )
         try expect(
-            mabinogiLaunch?.webToken == "e7388b84fadb40d999f43fbdee7c02d0",
+            mabinogiLaunch?.webToken == "WEBTOKEN000000000000000000000001",
             "should parse m_objData.webToken, got \(String(describing: mabinogiLaunch?.webToken))"
         )
 

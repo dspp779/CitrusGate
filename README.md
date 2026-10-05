@@ -1,6 +1,6 @@
 # Beanfun OTP for macOS
 
-專為 macOS 設計的非官方 Beanfun 遊戲免網頁自動帶參登入工具。透過 Gama Play 掃描 QR Code，即可安全取得 OTP 並自動啟動遊戲。零外部套件依賴（無需 Python、Node.js 或 Homebrew）。
+專為 macOS 設計的非官方 Beanfun 遊戲登入工具。透過 Gama Play 掃描 QR Code，即可安全取得 OTP 並自動啟動遊戲。零外部套件依賴（無需 Python、Node.js 或 Homebrew）。
 
 ## 核心特色
 

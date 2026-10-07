@@ -228,11 +228,46 @@ enum BeanfunWebStartOTP {
     static func redactSecrets(_ text: String) -> String {
         var value = summarizeDataField(in: text)
         value = value.replacingOccurrences(
-            of: #"(WebToken|SecretCode|webToken|secretCode)\s*[:=]\s*['"][^'"]+['"]"#,
+            of: #"["']?(WebToken|SecretCode)["']?\s*[:=]\s*['"][^'"]*['"]"#,
             with: "$1=[redacted]",
-            options: .regularExpression
+            options: [.regularExpression, .caseInsensitive]
         )
         return value
+    }
+
+    /// Observation only: never selects a token or includes either value in the log.
+    /// Empty or absent values cannot establish equality, including when both are missing.
+    static func webTokenDiagnostic(embedded: String?, cookie: String?) -> String {
+        let present = !(embedded ?? "").isEmpty
+        let comparison: String
+        if let embedded = embedded, !embedded.isEmpty,
+           let cookie = cookie, !cookie.isEmpty {
+            comparison = embedded == cookie ? "true" : "false"
+        } else {
+            comparison = "unavailable"
+        }
+        return "embedded webToken \(present ? "present" : "missing"); embedded == cookie: \(comparison)"
+    }
+
+    /// Select once, before the non-MapleStory OTP request; fallback does not retry a rejected OTP.
+    /// Issue #5: https://github.com/dspp779/CitrusGate/issues/5
+    /// Modern live checks on 2026-10-07 found embedded == cookie and successful cookie OTPs
+    /// for Mabinogi/Elsword. Prefer the step2 session's embedded value, falling back to cookie
+    /// when embedded is absent/empty. If both exist but differ, preserve the verified cookie
+    /// behavior: no live mismatch has established which value is server-paired yet. Investigate
+    /// a fresh session's official successful flow before changing that conflict rule, and never
+    /// log token values. An embedded value can still be selected if the cookie disappears;
+    /// this does not bypass server-side session validation. Preserve values verbatim.
+    /// Keep this policy identical in Modern and Legacy; MapleStory's otp_v2 is separate.
+    static func selectWebToken(embedded: String?, cookie: String?) -> String? {
+        if let embedded = embedded, !embedded.isEmpty {
+            if let cookie = cookie, !cookie.isEmpty, embedded != cookie {
+                return cookie
+            }
+            return embedded
+        }
+        guard let cookie = cookie, !cookie.isEmpty else { return nil }
+        return cookie
     }
 
     static func summarizeDataField(in text: String) -> String {
@@ -258,7 +293,7 @@ enum BeanfunWebStartOTP {
         /// fetched separately from another host), and must be preferred for the legacy
         /// `get_webstart_otp.ashx` request used by non-MapleStory games.
         let secretCode: String?
-        /// `m_objData.webToken`, when present. Kept for the same reason as `secretCode`.
+        /// `m_objData.webToken`, when present. See selectWebToken for evidence and conflict fallback.
         let webToken: String?
     }
 
@@ -675,7 +710,12 @@ final class BeanfunClient {
         }
 
         log("[OTP 5/6] 取得 WebStart OTP envelope")
-        guard let webToken = cookieValue(named: "bfWebToken") else {
+        let cookieWebToken = cookieValue(named: "bfWebToken")
+        log("  \(BeanfunWebStartOTP.webTokenDiagnostic(embedded: session.launch?.webToken, cookie: cookieWebToken))")
+        guard let webToken = BeanfunWebStartOTP.selectWebToken(
+            embedded: session.launch?.webToken,
+            cookie: cookieWebToken
+        ) else {
             throw BeanfunError.expired(BeanfunError.defaultExpiredMessage)
         }
         let start = session.start

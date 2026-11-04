@@ -7,11 +7,10 @@ struct ClassicDownloadProgressView: View {
         let state = model.classicDownloadProgress
         VStack(alignment: .leading, spacing: 24) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("GETTING READY").font(.system(size: 10, weight: .bold)).tracking(1.6).foregroundStyle(CitrusTheme.accent)
-                    Text(model.gameClientDownloadTitle).font(.system(size: 22, weight: .bold, design: .rounded))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(model.gameClientDownloadTitle)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 12)
                 Image(systemName: state.phase == .patching ? "wrench.and.screwdriver" : "arrow.down.circle")
                     .font(.system(size: 30, weight: .light)).foregroundStyle(CitrusTheme.accent).accessibilityHidden(true)

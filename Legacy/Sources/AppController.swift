@@ -81,13 +81,9 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
 
     // Classic Mode UI
     private let openClassicWebButton = NSButton(title: "開啟官方登入網頁", target: nil, action: nil)
-    private let claimNexonPlugButton = NSButton(title: "將 NexonPlug 設為由 Beanfun OTP 處理", target: nil, action: nil)
-    private let nexonPlugBoundLabel = NSTextField(
-        wrappingLabelWithString: "NexonPlug 已由 Beanfun OTP 處理"
-    )
+    private let claimNexonPlugButton = NSButton(title: "設定登入連結", target: nil, action: nil)
     private let downloadClassicButton = NSButton(title: "下載經典版", target: nil, action: nil)
     private let downloadMapleStoryButton = NSButton(title: "下載新楓之谷", target: nil, action: nil)
-    private let classicNoticeLabel = NSTextField(wrappingLabelWithString: "網頁登入後會透過 NexonPlug:// 傳送參數啟動經典版。")
     private var classicContainer: NSStackView!
 
     // OTP Block UI
@@ -208,6 +204,7 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         qrStatusLabel.textColor = NSColor.disabledControlTextColor
 
         // Executable Path Section
+        exePathLabel.isHidden = true
         exePathLabel.alignment = .center
         exePathLabel.font = NSFont.systemFont(ofSize: 11)
         exePathLabel.textColor = NSColor.secondaryLabelColor
@@ -241,20 +238,9 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
         downloadClassicButton.target = self
         downloadClassicButton.action = #selector(handleDownloadClassic)
 
-        classicNoticeLabel.alignment = .center
-        classicNoticeLabel.font = NSFont.systemFont(ofSize: 11)
-        classicNoticeLabel.textColor = NSColor.secondaryLabelColor
-
-        nexonPlugBoundLabel.alignment = .center
-        nexonPlugBoundLabel.font = NSFont.systemFont(ofSize: 11)
-        nexonPlugBoundLabel.textColor = NSColor.secondaryLabelColor
-        nexonPlugBoundLabel.isHidden = true
-
         classicContainer = NSStackView(views: [
-            classicNoticeLabel,
             openClassicWebButton,
             claimNexonPlugButton,
-            nexonPlugBoundLabel,
             downloadClassicButton,
         ])
         classicContainer.orientation = .vertical
@@ -545,17 +531,21 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
     }
 
     private func updateExePathLabel() {
-        guard let game = selectedGame else {
+        guard selectedGame != nil else {
             exePathLabel.stringValue = ""
+            exePathLabel.isHidden = true
+            exePathLabel.toolTip = nil
             return
         }
         if executablePath.isEmpty {
-            exePathLabel.stringValue = "（未指定 \(game.executableName) 主程式）"
+            exePathLabel.stringValue = ""
         } else if !FileManager.default.fileExists(atPath: executablePath) {
             exePathLabel.stringValue = "⚠️ 找不到主程式：\(executablePath)"
         } else {
-            exePathLabel.stringValue = "主程式：\(executablePath)"
+            exePathLabel.stringValue = URL(fileURLWithPath: executablePath).lastPathComponent
         }
+        exePathLabel.isHidden = exePathLabel.stringValue.isEmpty
+        exePathLabel.toolTip = executablePath.isEmpty ? nil : executablePath
         updateButtons()
     }
 
@@ -995,7 +985,6 @@ final class AppController: NSViewController, NSTableViewDataSource, NSTableViewD
             selfBundleID: Self.beanfunOTPBundleID
         )
         claimNexonPlugButton.isHidden = bound
-        nexonPlugBoundLabel.isHidden = !bound
     }
 
     @objc private func handlePrimary() {

@@ -19,18 +19,20 @@ struct ContentView: View {
                             .padding(24)
                             .frame(maxWidth: .infinity, minHeight: 520, alignment: .top)
                     }
-                    Divider().opacity(0.55)
-                    HStack(spacing: 8) {
-                        Image(systemName: model.isBusy ? "hourglass" : "lock.shield")
-                            .accessibilityHidden(true)
-                        Text(model.screen == .games ? "Beanfun OTP · 非官方 macOS 登入工具" : model.statusMessage)
-                            .lineLimit(2)
-                        Spacer(minLength: 0)
+                    if model.screen != .games && model.screen != .qr {
+                        Divider().opacity(0.55)
+                        HStack(spacing: 8) {
+                            Image(systemName: model.isBusy ? "hourglass" : "lock.shield")
+                                .accessibilityHidden(true)
+                            Text(model.statusMessage)
+                                .lineLimit(2)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(CitrusTheme.secondary)
+                        .padding(.horizontal, 24)
+                        .frame(minHeight: 44)
                     }
-                    .font(.system(size: 11))
-                    .foregroundStyle(CitrusTheme.secondary)
-                    .padding(.horizontal, 24)
-                    .frame(minHeight: 44)
                 }
                 .frame(height: 660)
 
@@ -185,21 +187,21 @@ struct ContentView: View {
 
     private var gamePickerView: some View {
         VStack(alignment: .leading, spacing: 24) {
-            CitrusSectionHeading(eyebrow: "YOUR NEXT ADVENTURE", title: "準備好，進入遊戲。", subtitle: "選擇遊戲，完成登入，就能出發。")
+            CitrusSectionHeading(title: "選擇遊戲")
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 16) {
                 ForEach(model.games) { game in
                     Button { model.selectGame(game, autoPickExecutable: false) } label: {
                         VStack(alignment: .leading, spacing: 0) {
                             GameArtwork(game: game).frame(height: 112).clipped()
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(game.name).font(.system(size: 14, weight: .semibold)).lineLimit(2).frame(minHeight: 20, alignment: .top)
-                                HStack(spacing: 5) {
-                                    Text(game.authFlow == .webNexonPlug ? "網頁登入" : "Gama Play 掃碼")
-                                    Spacer(minLength: 0)
-                                    Image(systemName: "arrow.up.right").accessibilityHidden(true)
-                                }
-                                .font(.system(size: 11)).foregroundStyle(CitrusTheme.secondary)
+                            HStack(spacing: 8) {
+                                Text(game.name).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(CitrusTheme.secondary)
+                                    .accessibilityHidden(true)
                             }
+                            .frame(minHeight: 24)
                             .padding(13)
                         }
                         .background(CitrusTheme.surface)
@@ -227,7 +229,7 @@ struct ContentView: View {
                 if !hasUpdateFailure {
                     GameArtwork(game: game).frame(height: 132).clipShape(RoundedRectangle(cornerRadius: 16))
                 }
-                CitrusSectionHeading(eyebrow: "ONE SCAN AWAY", title: "\(game.name)", subtitle: "使用 Gama Play 掃碼，確認後選擇遊戲帳號。")
+
             }
             if hasUpdateFailure { ClientUpdateActionsSection(model: model) }
             Button { model.startLogin() } label: {
@@ -246,7 +248,7 @@ struct ContentView: View {
 
     private var standardQRView: some View {
         VStack(spacing: 18) {
-            CitrusSectionHeading(eyebrow: "SCAN & CONFIRM", title: "掃碼，確認登入。", subtitle: "開啟 Gama Play 掃描下方 QR Code，並在手機上確認。")
+            CitrusSectionHeading(title: "用 Gama Play 掃碼")
             ZStack {
                 RoundedRectangle(cornerRadius: 20).fill(.white)
                 if let image = model.qrImage {
@@ -287,17 +289,16 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 22) {
             if let game = model.selectedGame {
                 GameArtwork(game: game).frame(height: 132).clipped().clipShape(RoundedRectangle(cornerRadius: 16))
-                CitrusSectionHeading(eyebrow: "A CLASSIC RETURNS", title: "\(game.name)", subtitle: "在官網完成登入後，回到這裡啟動遊戲。")
+
             }
             if !model.isNexonPlugHandler {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "link.badge.plus").foregroundStyle(CitrusTheme.accent)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("先連結網頁登入").font(.headline)
-                        Text("讓官網將登入結果交給 Beanfun OTP。").font(.caption).foregroundStyle(CitrusTheme.secondary)
-                        Button("設定登入連結") { model.claimNexonPlugHandler() }.buttonStyle(.link)
-                    }
+                Button {
+                    model.claimNexonPlugHandler()
+                } label: {
+                    Label("設定登入連結", systemImage: "link.badge.plus")
                 }
+                .buttonStyle(.bordered)
+                .disabled(model.isBusy)
             }
             Button { model.openClassicLoginPage() } label: { Label("開啟官網登入", systemImage: "arrow.up.right.square") }
                 .buttonStyle(CitrusPrimaryButton())
@@ -316,13 +317,8 @@ struct ContentView: View {
                 Image(systemName: "qrcode.viewfinder")
                     .font(.system(size: 56, weight: .light))
                     .foregroundStyle(.orange)
-                VStack(spacing: 6) {
-                    Text("使用 Gama Play 掃碼登入")
-                        .font(.title3.bold())
-                    Text("登入成功後會自動列出\(model.selectedGame?.name ?? "遊戲")帳號，不需要事先知道 SN。")
-                        .foregroundStyle(CitrusTheme.secondary)
-                        .multilineTextAlignment(.center)
-                }
+                Text("使用 Gama Play 掃碼登入")
+                    .font(.title3.bold())
                 if model.isDownloadingGameClient {
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.small)
@@ -388,7 +384,7 @@ struct ContentView: View {
 
     private var standardAccountView: some View {
         VStack(alignment: .leading, spacing: 22) {
-            CitrusSectionHeading(eyebrow: "YOU’RE SIGNED IN", title: model.accounts.count > 1 ? "選擇你的帳號。" : "準備進入遊戲。", subtitle: model.selectedGame?.name ?? "登入已完成")
+            CitrusSectionHeading(title: "選擇帳號")
             ScrollView {
                 VStack(spacing: 8) {
                     ForEach(model.accounts) { account in
@@ -878,11 +874,13 @@ private struct ExecutablePickerSection: View {
                     Image(systemName: model.hasValidExecutable ? "checkmark.circle" : "folder.badge.questionmark")
                         .foregroundStyle(model.hasValidExecutable ? Color.green : CitrusTheme.secondary)
                         .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.hasValidExecutable ? "主程式已設定" : "準備遊戲主程式").font(.system(size: 12, weight: .semibold))
-                        Text(model.hasValidExecutable ? URL(fileURLWithPath: model.executablePath).deletingLastPathComponent().path.replacingOccurrences(of: NSHomeDirectory(), with: "~") : "選擇 \(game.executableName)，或先下載遊戲。")
-                            .font(.system(size: 11)).foregroundStyle(CitrusTheme.secondary).lineLimit(2).truncationMode(.middle)
+                    if model.hasValidExecutable {
+                        Text(URL(fileURLWithPath: model.executablePath).lastPathComponent)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1).truncationMode(.middle)
                             .help(model.executablePath)
+                    } else {
+                        Text(game.executableName).font(.system(size: 12, weight: .semibold))
                     }
                     Spacer(minLength: 0)
                     Button(model.hasValidExecutable ? "更換…" : "選擇…") { model.chooseExecutable() }

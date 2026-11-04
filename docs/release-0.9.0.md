@@ -21,6 +21,12 @@ Modern 支援 macOS 13 以上、Apple Silicon／Intel。Legacy App 保留 Intel 
 
 本段為待發布文案；實際正式發布仍須完成下方發布前驗收，不表示已建立 GitHub release。
 
+## Build 31 介面精簡（2026-11-04）
+
+- Modern 以遊戲名稱、卡片與主要操作呈現流程，移除裝飾性小標和重複副標。
+- Legacy 經典版在需要時顯示「設定登入連結」。主程式欄顯示檔名，完整路徑可透過提示查看。
+- 掃碼、倒數、錯誤與取消提示仍在對應的操作畫面顯示。
+
 ## Build 30 最後程式碼與介面檢查
 
 - 修正取消後仍承諾接續下載的提示，明確說明可能重新下載。
@@ -125,5 +131,5 @@ Modern 支援 macOS 13 以上、Apple Silicon／Intel。Legacy App 保留 Intel 
 - 程式碼／回歸：`.build/final-review-tests.log`；5 項 Python、48 項核心、兩版各 14 個 WebToken fixtures，以及更新與原子提交邊界案例。
 - 介面：`.build/ui-review-final.log`、`.build/ui-review-legacy-final.log`；Legacy 原生控制項另檢查僅有階段訊息時與校驗時無過期資訊、取消鎖定，以及結束後操作恢復。
 - 簽章／公證：`.build/release-modern.log`、`.build/release-legacy.log`；獨立檢查：`.build/verify-modern-final.log`、`.build/verify-legacy-final.log`。
-- 產物：`dist/Beanfun-OTP-0.9.0-macOS.zip`、`dist/Beanfun-OTP-Legacy-0.9.0-macOS.zip`，版本均為 0.9.0 build 30；SHA-256 見 `dist/SHA256SUMS.txt`。
+- 產物：`dist/Beanfun-OTP-0.9.0-macOS.zip`、`dist/Beanfun-OTP-Legacy-0.9.0-macOS.zip`，目前版本均為 0.9.0 build 31；SHA-256 見 `dist/SHA256SUMS.txt`。
 - 本輪沒有重跑所有大型官方下載；保留 build 29 的真實跨版本證據，build 30 以對應取消邊界回歸、兩版建置及原生介面測試驗證最後修正。

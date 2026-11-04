@@ -33,16 +33,14 @@ struct CitrusPrimaryButton: ButtonStyle {
 }
 
 struct CitrusSectionHeading: View {
-    let eyebrow: String
     let title: String
-    let subtitle: String
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(eyebrow).font(.system(size: 10, weight: .bold)).tracking(1.6).foregroundStyle(CitrusTheme.accent)
-            Text(title).font(.system(size: 27, weight: .bold, design: .rounded)).tracking(-0.5)
-            Text(subtitle).font(.callout).foregroundStyle(CitrusTheme.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        Text(title)
+            .font(.system(size: 27, weight: .bold, design: .rounded))
+            .tracking(-0.5)
+            .accessibilityAddTraits(.isHeader)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -50,7 +48,7 @@ struct LaunchReadinessView: View {
     @ObservedObject var model: AppModel
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            CitrusSectionHeading(eyebrow: "READY TO PLAY", title: "啟動前檢查", subtitle: "確認遊戲檔案與啟動環境，讓登入順利完成。")
+            CitrusSectionHeading(title: "啟動前檢查")
             ForEach(model.readinessItems) { item in
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: item.isReady ? "checkmark.circle.fill" : "exclamationmark.circle")

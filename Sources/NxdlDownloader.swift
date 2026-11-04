@@ -16,7 +16,7 @@ struct GameClientToolConfig: Equatable {
 
     func downloadArguments(destinationPath: String) -> [String] {
         if self == .cmsdlMapleStory {
-            return [gameAlias, "--download", destinationPath, "--purge-wz-files"]
+            return [gameAlias, "--download", destinationPath, "--no-gui"]
         }
         return [gameAlias, "--download", destinationPath]
     }
@@ -32,11 +32,11 @@ struct GameClientToolConfig: Equatable {
     )
 
     static let cmsdlMapleStory = GameClientToolConfig(
-        releaseTag: "v0.2.5",
+        releaseTag: "v0.2.9",
         binaryRemoteURL: URL(
-            string: "https://github.com/HikariCalyx/cmsdl/releases/download/v0.2.5/cmsdl_darwin"
+            string: "https://github.com/HikariCalyx/cmsdl/releases/download/v0.2.9/cmsdl_darwin"
         )!,
-        sha256Hex: "706efcf17608a807c884e1eb8e0c8b97084f67dfbec29f7664e9aba77d0a0b78",
+        sha256Hex: "9e39d11a4158e322762fef2e32740a064420eeb8c583edf4a1183fbde3c197ff",
         cacheFolderName: "cmsdl",
         binaryFileName: "cmsdl_darwin",
         gameAlias: "tms",
@@ -79,7 +79,34 @@ struct NxdlOSC94Progress: Equatable {
     let percent: Int?
 }
 
+enum ClientDownloadPhase: String, CaseIterable {
+    case preparing = "準備", checking = "檢查檔案", downloading = "下載", patching = "套用補丁", minorPatch = "主程式小更新", finishing = "完成檢查"
+}
+
 struct NxdlDownloadProgressState: Equatable {
+    var phase: ClientDownloadPhase = .preparing
+    mutating func notePhase(_ message: String) {
+        let value = message.lowercased()
+        let next: ClientDownloadPhase
+        if value.contains("minor_patch") || value.contains("minor patch") || value.contains("exepatch") {
+            next = .minorPatch
+        } else if value.contains("[progress] scanning") || value.contains("verif") || value.contains("檢查") || value.contains("驗證") {
+            next = .checking
+        } else if value.contains("[progress] patch") || value.contains("[progress] begin_apply") || value.contains("applying") || value.contains("套用") {
+            next = .patching
+        } else if value.contains("done:") || value.contains("updated.") || value.contains("nothing to do") {
+            next = .finishing
+        } else if value.contains("starting download") || value.contains("下載中") {
+            next = .downloading
+        } else { return }
+        if phase != next {
+            overall = nil
+            currentFileNames = []
+            isVerifyingExistingFiles = false
+        }
+        phase = next
+    }
+
     var statusMessage: String = ""
     var overall: NxdlProgressBarInfo?
     var currentFileNames: [String] = []
@@ -171,6 +198,7 @@ enum NxdlProgressParser {
         let cleaned = stripANSI(raw)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
+        if cleaned.range(of: #"\]\s+0\s*B\s*/\s*0\s*B\s*\("#, options: .regularExpression) != nil { return nil }
 
         if let overall = parseOverallProgress(raw) {
             var text = "下載中：\(overall.downloadedText) / \(overall.totalText)（\(overall.speedText)"
@@ -334,6 +362,7 @@ enum NxdlProgressParser {
         let bar = String(line[barRange])
         let downloadedText = String(line[downloadedRange])
         let totalText = String(line[totalRange])
+        guard (parseByteCount(totalText) ?? 0) > 0 else { return nil }
         let speedSection = String(line[speedRange]).trimmingCharacters(in: .whitespaces)
         var trailingFilename = filename
         if match.numberOfRanges >= 6, let messageRange = Range(match.range(at: 5), in: line) {
@@ -504,6 +533,7 @@ final class NxdlOutputStreamParser {
             return update
         }
         if let formatted = NxdlProgressParser.formatProgressLine(segment) {
+            tracker.setStatusMessage(formatted)
             return .message(formatted)
         }
         return nil
@@ -520,6 +550,7 @@ final class NxdlProgressTracker {
 
     func setOverall(_ overall: NxdlProgressBarInfo) {
         state.overall = overall
+        if state.phase == .preparing { state.phase = .downloading }
         if !frameFileNames.isEmpty {
             state.currentFileNames = frameFileNames
             frameFileNames = []
@@ -530,6 +561,7 @@ final class NxdlProgressTracker {
         // Real per-file download progress means we're no longer just
         // reporting verified/skipped files.
         state.isVerifyingExistingFiles = false
+        if state.phase == .checking { state.phase = .downloading }
         guard !frameFileNames.contains(file.displayName) else { return }
         frameFileNames.append(file.displayName)
         // Publish while the frame is still growing; a shorter list waits for the
@@ -541,6 +573,7 @@ final class NxdlProgressTracker {
 
     func setStatusMessage(_ message: String) {
         state.statusMessage = message
+        state.notePhase(message)
     }
 
     func setDestinationURL(_ url: URL?) {
@@ -557,6 +590,7 @@ final class NxdlProgressTracker {
 
     func messageUpdate(_ message: String) -> NxdlDownloadUpdate {
         state.statusMessage = message
+        state.notePhase(message)
         return .message(message)
     }
 }
@@ -568,6 +602,7 @@ enum NxdlDownloaderError: LocalizedError {
     case processFailed(Int32, String)
     case pathNormalizeFailed(String)
     case cancelled
+    case incompleteUpdate(String)
 
     var errorDescription: String? {
         switch self {
@@ -584,6 +619,7 @@ enum NxdlDownloaderError: LocalizedError {
             return "客戶端工具失敗（結束代碼 \(code)）：\(output)"
         case let .pathNormalizeFailed(message):
             return "無法還原下載檔案路徑：\(message)"
+        case let .incompleteUpdate(message): return message
         case .cancelled:
             return "下載已取消"
         }
@@ -592,8 +628,8 @@ enum NxdlDownloaderError: LocalizedError {
 
 /// SHA-256 helpers for the pinned `nxdl_darwin` binary (CommonCrypto → macOS 10.12+).
 enum NxdlBinaryIntegrity {
-    /// `shasum -a 256` of HikariCalyx/nxdl `v0.1.2-prerelease2` / `nxdl_darwin`.
-    static let expectedSHA256Hex = "a0cf22ae06f94268a33d3bed847619f70842fbd3b0ee758cd0c607782d31a1f7"
+    /// `shasum -a 256` of HikariCalyx/nxdl `v0.1.2-prerelease9` / `nxdl_darwin`.
+    static let expectedSHA256Hex = "e200004877ce629a1f3103da2bbb1c3235c15dafcfe7996ac0907e09f481e34e"
 
     static func sha256Hex(of data: Data) -> String {
         data.withUnsafeBytes { rawBuffer -> String in
@@ -612,11 +648,14 @@ enum NxdlBinaryIntegrity {
         var context = CC_SHA256_CTX()
         CC_SHA256_Init(&context)
         while true {
-            let chunk = handle.readData(ofLength: 1024 * 1024)
-            if chunk.isEmpty { break }
-            chunk.withUnsafeBytes { rawBuffer in
-                _ = CC_SHA256_Update(&context, rawBuffer.baseAddress, CC_LONG(chunk.count))
+            let count: Int = autoreleasepool {
+                let chunk = handle.readData(ofLength: 1024 * 1024)
+                chunk.withUnsafeBytes { rawBuffer in
+                    _ = CC_SHA256_Update(&context, rawBuffer.baseAddress, CC_LONG(chunk.count))
+                }
+                return chunk.count
             }
+            if count == 0 { break }
         }
         var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
         CC_SHA256_Final(&digest, &context)
@@ -672,6 +711,8 @@ enum WindowsPathFilenameNormalizer {
     /// Returns `nil` when the name does not need rewriting.
     static func relativeComponents(from basename: String) -> [String]? {
         guard basename.contains("\\") else { return nil }
+        guard !basename.hasPrefix("\\"), !basename.contains(":"),
+              !basename.split(separator: "\\").contains("..") else { return nil }
         let parts = basename
             .split(separator: "\\", omittingEmptySubsequences: true)
             .map(String.init)
@@ -682,9 +723,9 @@ enum WindowsPathFilenameNormalizer {
 }
 
 final class NxdlDownloader {
-    static let releaseTag = "v0.1.2-prerelease2"
+    static let releaseTag = "v0.1.2-prerelease9"
     static let binaryRemoteURL = URL(
-        string: "https://github.com/HikariCalyx/nxdl/releases/download/v0.1.2-prerelease2/nxdl_darwin"
+        string: "https://github.com/HikariCalyx/nxdl/releases/download/v0.1.2-prerelease9/nxdl_darwin"
     )!
     /// Must match `NxdlBinaryIntegrity.expectedSHA256Hex` for this releaseTag.
     static let binarySHA256Hex = NxdlBinaryIntegrity.expectedSHA256Hex
@@ -692,23 +733,51 @@ final class NxdlDownloader {
     static let classicExecutableName = "Maplestory_Classic.exe"
     static let applicationSupportFolderName = "local.ogom.beanfunotp"
 
+    private let supportRoot: URL?
+    // Internal pin used by reproducible historical-route tests. The app UI
+    // always leaves this nil and follows the current official target.
+    private let classicManifestTarget: String?
     private let fileManager: FileManager
     private let session: URLSession
     private let log: (String) -> Void
-    private var runningProcess: Process?
+    private let processLock = NSLock()
+    private var activeProcess: Process?
+    private var binaryTask: URLSessionDownloadTask?
+    private var epoch: UInt64 = 0
+    private var completionSummary = ""
+    var completionNote: String {
+        processLock.lock(); defer { processLock.unlock() }; return completionSummary
+    }
+    private var currentEpoch: UInt64 {
+        processLock.lock(); defer { processLock.unlock() }; return epoch
+    }
+    private func launch(_ process: Process, epoch expected: UInt64) throws {
+        processLock.lock(); defer { processLock.unlock() }
+        guard epoch == expected else { throw NxdlDownloaderError.cancelled }
+        if #available(macOS 10.13, *) { try process.run() } else { process.launch() }
+        activeProcess = process
+    }
+    private func clearProcess(_ process: Process) {
+        processLock.lock(); defer { processLock.unlock() }
+        if activeProcess === process { activeProcess = nil }
+    }
 
     init(
         fileManager: FileManager = .default,
+        supportRoot: URL? = nil,
         session: URLSession = .shared,
+        classicManifestTarget: String? = nil,
         log: @escaping (String) -> Void = { _ in }
     ) {
         self.fileManager = fileManager
+        self.supportRoot = supportRoot
         self.session = session
+        self.classicManifestTarget = classicManifestTarget
         self.log = log
     }
 
     func supportDirectory(for config: GameClientToolConfig) -> URL {
-        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let base = supportRoot ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.temporaryDirectory
         return base
             .appendingPathComponent(Self.applicationSupportFolderName, isDirectory: true)
@@ -730,7 +799,11 @@ final class NxdlDownloader {
     }
 
     func cancel() {
-        runningProcess?.terminate()
+        processLock.lock()
+        epoch &+= 1
+        binaryTask?.cancel()
+        if activeProcess?.isRunning == true { activeProcess?.terminate() }
+        processLock.unlock()
     }
 
     func downloadClassicClient(
@@ -762,61 +835,24 @@ final class NxdlDownloader {
     func downloadClient(
         config: GameClientToolConfig,
         to destination: URL,
+        operation: ClientUpdatePlan.Operation = .download,
         onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        let progressLock = NSLock()
-        var lastProgress = NxdlDownloadProgressState()
-        let track: (NxdlDownloadUpdate) -> Void = { update in
-            if case var .progress(state) = update {
-                state.destinationURL = destination
-                progressLock.lock()
-                lastProgress = state
-                progressLock.unlock()
-                onUpdate(.progress(state))
-            } else {
-                onUpdate(update)
-            }
-        }
-
-        ensureBinary(config: config, onUpdate: track) { [weak self] result in
+        let epoch = currentEpoch
+        ensureBinary(config: config, onUpdate: onUpdate) { [weak self] result in
             guard let self else { return }
+            guard self.currentEpoch == epoch else { completion(.failure(NxdlDownloaderError.cancelled)); return }
             switch result {
-            case let .failure(error):
-                completion(.failure(error))
+            case let .failure(error): completion(.failure(error))
             case let .success(binary):
-                self.runDownload(
-                    config: config,
-                    binary: binary,
-                    destination: destination,
-                    onUpdate: track
-                ) { downloadResult in
-                    switch downloadResult {
-                    case let .failure(error):
-                        completion(.failure(error))
-                    case .success:
-                        progressLock.lock()
-                        var restoring = lastProgress
-                        progressLock.unlock()
-                        restoring.statusMessage = "正在還原檔案路徑…"
-                        restoring.currentFileNames = []
-                        track(.progress(restoring))
-                        do {
-                            let restored = try self.normalizeWindowsPathFilenames(in: destination)
-                            if restored > 0 {
-                                self.log("已還原 \(restored) 個含反斜線的檔名為目錄結構：\(destination.path)")
-                                progressLock.lock()
-                                var done = lastProgress
-                                progressLock.unlock()
-                                done.statusMessage = "已還原 \(restored) 個檔案路徑"
-                                done.currentFileNames = []
-                                track(.progress(done))
-                            }
-                            completion(.success(()))
-                        } catch {
-                            completion(.failure(error))
-                        }
-                    }
+                if (config == .nxdlClassic || config == .cmsdlMapleStory)
+                    && (operation == .patch || self.fileManager.fileExists(atPath: destination.path)) {
+                    self.runTransactionalUpdate(config: config, binary: binary, destination: destination,
+                        operation: operation, epoch: epoch, onUpdate: onUpdate, completion: completion)
+                } else {
+                    self.runDownload(config: config, binary: binary, destination: destination,
+                        operation: operation, epoch: epoch, onUpdate: onUpdate, completion: completion)
                 }
             }
         }
@@ -878,13 +914,17 @@ final class NxdlDownloader {
     func downloadClient(
         config: GameClientToolConfig,
         to destination: URL,
+        operation: ClientUpdatePlan.Operation = .download,
         onUpdate: @escaping @Sendable (NxdlDownloadUpdate) -> Void
     ) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            downloadClient(config: config, to: destination, onUpdate: onUpdate) { result in
-                continuation.resume(with: result)
+        try Task.checkCancellation()
+        try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                downloadClient(config: config, to: destination, operation: operation, onUpdate: onUpdate) { result in
+                    continuation.resume(with: result)
+                }
             }
-        }
+        }, onCancel: { self.cancel() })
     }
 
     @available(macOS 10.15, *)
@@ -909,6 +949,59 @@ final class NxdlDownloader {
                 continuation.resume(with: result)
             }
         }
+    }
+
+    func inspectClient(
+        config: GameClientToolConfig, destination: URL,
+        completion: @escaping (Result<ClientUpdatePlan, Error>) -> Void
+    ) {
+        let epoch = currentEpoch
+        ensureBinary(config: config, onUpdate: { _ in }) { result in
+            switch result {
+            case let .failure(error): completion(.failure(error))
+            case let .success(binary):
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        try ClientUpdateTransaction.reclaimAbandoned(destination: destination)
+                        let process = Process(), pipe = Pipe()
+                        process.launchPath = binary.path
+                        process.currentDirectoryPath = self.supportDirectory(for: config).path
+                        process.arguments = config == .cmsdlMapleStory
+                            ? [config.gameAlias, "--upgrade-path-check", "latest", destination.path, "-v"] : config.checkArguments
+                        process.standardInput = FileHandle.nullDevice
+                        process.standardOutput = pipe; process.standardError = pipe
+                        try self.launch(process, epoch: epoch)
+                        defer { self.clearProcess(process) }
+                        let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+                        DispatchQueue.global().asyncAfter(deadline: .now() + 90, execute: timeout)
+                        defer { timeout.cancel() }
+                        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                        process.waitUntilExit()
+                        guard self.currentEpoch == epoch else { throw NxdlDownloaderError.cancelled }
+                        guard process.terminationReason != .uncaughtSignal else {
+                            throw NxdlDownloaderError.processFailed(-1, "更新查詢逾時，請重試。")
+                        }
+                        if config == .cmsdlMapleStory {
+                            completion(.success(try ClientUpdateInspection.cmsdl(exitCode: process.terminationStatus, output: output)))
+                        } else {
+                            guard process.terminationStatus == 0, let json = Self.extractJSONObjectText(from: output) else {
+                                throw NxdlDownloaderError.processFailed(process.terminationStatus, output)
+                            }
+                            completion(.success(try ClientUpdateInspection.classic(json: json, directory: destination)))
+                        }
+                    } catch { completion(.failure(error)) }
+                }
+            }
+        }
+    }
+
+    @available(macOS 10.15, *)
+    func inspectClient(config: GameClientToolConfig, destination: URL) async throws -> ClientUpdatePlan {
+        try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                inspectClient(config: config, destination: destination) { continuation.resume(with: $0) }
+            }
+        }, onCancel: { self.cancel() })
     }
 
     /// Rewrites files whose basenames contain `\` into real directory trees.
@@ -951,13 +1044,23 @@ final class NxdlDownloader {
             }
 
             let destinationParent = destinationURL.deletingLastPathComponent()
+            let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+            var existingAncestor = destinationParent
+            while !fileManager.fileExists(atPath: existingAncestor.path) && existingAncestor.path != "/" {
+                existingAncestor.deleteLastPathComponent()
+            }
+            let resolvedAncestor = existingAncestor.resolvingSymlinksInPath().standardizedFileURL.path
+            guard (resolvedAncestor + "/" == resolvedRoot || resolvedAncestor.hasPrefix(resolvedRoot)),
+                  (try sourceURL.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true else {
+                throw NxdlDownloaderError.pathNormalizeFailed("路徑含符號連結，請手動檢查。")
+            }
             try fileManager.createDirectory(
                 at: destinationParent,
                 withIntermediateDirectories: true
             )
 
             if fileManager.fileExists(atPath: destinationURL.path) {
-                try fileManager.removeItem(at: destinationURL)
+                throw NxdlDownloaderError.pathNormalizeFailed("目標已存在，未覆寫任何檔案：\(destinationURL.lastPathComponent)")
             }
 
             do {
@@ -1010,6 +1113,16 @@ final class NxdlDownloader {
         onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
         completion: @escaping (Result<URL, Error>) -> Void
     ) {
+        guard ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 11, minorVersion: 0, patchVersion: 0)) else {
+            completion(.failure(NxdlDownloaderError.binaryDownloadFailed("新版下載工具需要 macOS 11 以上；登入功能仍可使用。")))
+            return
+        }
+        let expectedEpoch = currentEpoch
+        let originalCompletion = completion
+        let completion: (Result<URL, Error>) -> Void = { result in
+            guard self.currentEpoch == expectedEpoch else { originalCompletion(.failure(NxdlDownloaderError.cancelled)); return }
+            originalCompletion(result)
+        }
         let url = binaryURL(for: config)
         let supportDir = supportDirectory(for: config)
         if fileManager.isExecutableFile(atPath: url.path) {
@@ -1082,6 +1195,7 @@ final class NxdlDownloader {
                 completion(.failure(error))
             }
         }
+        processLock.lock(); binaryTask = task; processLock.unlock()
         task.resume()
     }
 
@@ -1101,7 +1215,7 @@ final class NxdlDownloader {
         onUpdate(.message("正在查詢客戶端大小…"))
 
         let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
+        let stderrPipe = stdoutPipe
         let process = Process()
         process.launchPath = binary.path
         process.currentDirectoryPath = supportDirectory(for: config).path
@@ -1110,14 +1224,18 @@ final class NxdlDownloader {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        runningProcess = process
+        let expectedEpoch = currentEpoch
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            defer { self?.runningProcess = nil }
-
-            process.launch()
+            guard let self else { return }
+            defer { self.clearProcess(process) }
+            do { try self.launch(process, epoch: expectedEpoch) }
+            catch { completion(.failure(error)); return }
+            let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 90, execute: timeout)
+            defer { timeout.cancel() }
 
             let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderrData = Data()
             process.waitUntilExit()
 
             if process.terminationReason == .uncaughtSignal {
@@ -1171,7 +1289,7 @@ final class NxdlDownloader {
         onUpdate(.message("正在查詢客戶端檔案清單…"))
 
         let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
+        let stderrPipe = stdoutPipe
         let process = Process()
         process.launchPath = binary.path
         process.currentDirectoryPath = supportDirectory(for: config).path
@@ -1180,14 +1298,18 @@ final class NxdlDownloader {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        runningProcess = process
+        let expectedEpoch = currentEpoch
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            defer { self?.runningProcess = nil }
-
-            process.launch()
+            guard let self else { return }
+            defer { self.clearProcess(process) }
+            do { try self.launch(process, epoch: expectedEpoch) }
+            catch { completion(.failure(error)); return }
+            let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 90, execute: timeout)
+            defer { timeout.cancel() }
 
             let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderrData = Data()
             process.waitUntilExit()
 
             if process.terminationReason == .uncaughtSignal {
@@ -1216,158 +1338,438 @@ final class NxdlDownloader {
 
     /// Prefer a whole JSON object line; fall back to first `{`…last `}` span.
     private static func extractJSONObjectText(from raw: String) -> String? {
-        let cleaned = NxdlProgressParser.stripANSI(raw)
-        let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("{"), trimmed.contains("}") {
-            return trimmed
+        ClientCheckJSONParser.extractJSONObjectText(from: raw)
+    }
+
+
+    private func runTransactionalUpdate(
+        config: GameClientToolConfig, binary: URL, destination: URL, operation: ClientUpdatePlan.Operation, epoch: UInt64,
+        onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                onUpdate(.message("正在建立安全更新副本；完成驗證後才會切換遊戲資料夾。"))
+                let check = { if self.currentEpoch != epoch { throw NxdlDownloaderError.cancelled } }
+                let transaction = try ClientUpdateTransaction(destination: destination, checkCancelled: check)
+                var handedOff = false
+                defer { if !handedOff { transaction.discard() } }
+                var executableOnly = false
+                var retainExecutable = false
+                if config == .cmsdlMapleStory {
+                    let manifest = try self.fetchUpdateJSON(URL(string: "https://maplestory-download.beanfun.com/maplestory/productInfo.json")!, checkCancelled: check)
+                    let currentBase = try TMSExecutablePolicy.hasCurrentBase(in: transaction.working, manifest: manifest)
+                    executableOnly = operation == .patch && currentBase
+                    retainExecutable = try TMSExecutablePolicy.shouldRetainExecutable(in: transaction.working, manifest: manifest)
+                    // cmsdl reuses ExePatch.dat by length alone, even if a
+                    // killed segmented download merely preallocated the file.
+                    let hotfix = transaction.working.appendingPathComponent("ExePatch.dat")
+                    if self.fileManager.fileExists(atPath: hotfix.path) { try self.fileManager.removeItem(at: hotfix) }
+                }
+                func prepareFullRepair() throws {
+                    if config == .cmsdlMapleStory {
+                        // Preserve a same-generation executable changed by the
+                        // game. Clear placeholders and obsolete-generation EXEs.
+                        let names = retainExecutable ? ["ExePatch.dat", "ExePatch.dat.cmsdl"]
+                            : ["MapleStory.exe", "MapleStory.exe.cmsdl", "ExePatch.dat", "ExePatch.dat.cmsdl"]
+                        for name in names {
+                            let file = transaction.working.appendingPathComponent(name)
+                            if self.fileManager.fileExists(atPath: file.path) { try self.fileManager.removeItem(at: file) }
+                        }
+                    } else if let entries = self.fileManager.enumerator(at: transaction.working, includingPropertiesForKeys: [.isRegularFileKey]) {
+                        // NGM's resume bitmap does not authenticate the bytes
+                        // already written. Restart those objects from the CDN.
+                        for case let file as URL in entries where file.pathExtension == "ngmdl" {
+                            try check()
+                            try self.fileManager.removeItem(at: file)
+                        }
+                    }
+                }
+                if operation == .download || executableOnly { try prepareFullRepair() }
+                if executableOnly && retainExecutable {
+                    onUpdate(.message("主版本一致，保留既有主程式，避免覆蓋遊戲端的小更新。"))
+                }
+                func finish(_ result: Result<Void, Error>) {
+                    do {
+                        try result.get()
+                        try check()
+                        if config == .nxdlClassic {
+                            try self.synchronizeClassic(transaction: transaction, checkCancelled: check, onUpdate: onUpdate)
+                        }
+                        var verification = NxdlDownloadProgressState()
+                        verification.phase = .finishing
+                        verification.statusMessage = "正在驗證更新後的遊戲檔案…"
+                        onUpdate(.progress(verification))
+                        try self.verifyUpdatedClient(config: config, directory: transaction.working, checkCancelled: check)
+                        if config == .nxdlClassic {
+                            let patchdata = transaction.working.appendingPathComponent("patchdata")
+                            if self.fileManager.fileExists(atPath: patchdata.path) { try self.fileManager.removeItem(at: patchdata) }
+                        }
+                        try transaction.commit(checkCancelled: check)
+                        if config == .nxdlClassic {
+                            self.processLock.lock()
+                            self.completionSummary = "經典版檔案校驗完成，已安全切換至目標版本。"
+                            self.processLock.unlock()
+                        }
+                        completion(.success(()))
+                    } catch { transaction.discard(); completion(.failure(error)) }
+                }
+                handedOff = true
+                self.runDownload(config: config, binary: binary, destination: transaction.working,
+                    operation: executableOnly ? .download : operation, executableOnly: executableOnly,
+                    epoch: epoch, onUpdate: onUpdate) { result in
+                    switch result {
+                    case .success: finish(result)
+                    case let .failure(error):
+                        if self.currentEpoch != epoch { transaction.discard(); completion(.failure(NxdlDownloaderError.cancelled)); return }
+                        guard operation == .patch else { finish(result); return }
+                        if config == .nxdlClassic, let failure = error as? NxdlDownloaderError,
+                           case let .processFailed(_, detail) = failure, detail.contains("unknown patch opcode") {
+                            do {
+                                onUpdate(.message("工具遇到未支援的差分指令，正在以相容解碼完成已校驗的補丁…"))
+                                try self.completeClassicCompatibility(transaction: transaction, checkCancelled: check)
+                                finish(.success(()))
+                            } catch { finish(.failure(error)) }
+                            return
+                        }
+                        // Missing routes and damaged old input can be recovered
+                        // by the tools' authenticated full-file download. Keep
+                        // it inside the private copy as well.
+                        onUpdate(.message("差分更新未完成，改用完整檔案修復；原安裝仍保留。\(error.localizedDescription)"))
+                        do {
+                            try prepareFullRepair()
+                            self.runDownload(config: config, binary: binary, destination: transaction.working,
+                                operation: .download, epoch: epoch, onUpdate: onUpdate, completion: finish)
+                        } catch { transaction.discard(); completion(.failure(error)) }
+                    }
+                }
+            } catch { completion(.failure(error)) }
         }
-        for line in cleaned.components(separatedBy: .newlines) {
-            let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if t.hasPrefix("{"), t.contains("total_size") {
-                return t
+    }
+
+    /// Validate authoritative file digests, not just the patcher's exit status
+    /// or final version marker. This also catches incomplete NGM patch routes
+    /// which omit newly added files.
+    func verifyUpdatedClient(config: GameClientToolConfig, directory: URL,
+                                     checkCancelled: () throws -> Void) throws {
+        let manifestURL: URL
+        if config == .nxdlClassic {
+            let hash: String
+            if let pinned = classicManifestTarget { hash = pinned }
+            else {
+                let info = try fetchUpdateJSON(URL(string: "https://ngmapi.nexon.com/game-info/2982@2141")!, checkCancelled: checkCancelled)
+                guard let latest = info["manifest_name"] as? String else { throw ClientCheckError.invalidJSON }
+                hash = latest
+            }
+            guard hash.range(of: "^[a-fA-F0-9]{32}$", options: .regularExpression) != nil,
+                  ClientUpdateInspection.classicMarker(in: directory)?.lowercased() == hash.lowercased() else {
+                throw NxdlDownloaderError.incompleteUpdate("更新尚未到達伺服器目標版本；原安裝仍保留。")
+            }
+            manifestURL = URL(string: "https://tw-ngm.maplestoryclassic.games.gamania.com/\(hash)")!
+        } else {
+            manifestURL = URL(string: "https://maplestory-download.beanfun.com/maplestory/productInfo.json")!
+        }
+        let manifest = try fetchUpdateJSON(manifestURL, checkCancelled: checkCancelled)
+        var files: [(String, String, Bool)] = []
+        var ngmChunkSize = 0
+        if config == .nxdlClassic {
+            guard let entries = manifest["files"] as? [String: [String: Any]], !entries.isEmpty,
+                  let size = manifest["chunk_size"] as? Int, size > 0, size <= 16 * 1024 * 1024 else {
+                throw ClientCheckError.invalidJSON
+            }
+            ngmChunkSize = size
+            for (encoded, entry) in entries {
+                guard let raw = Data(base64Encoded: encoded), let path = String(data: raw, encoding: .utf8),
+                      let objects = entry["objects"] as? [String: String] else { throw ClientCheckError.invalidJSON }
+                if objects.isEmpty || objects.values.contains("__DIR__") { continue }
+                let ordered = objects.compactMap { key, value -> (Int, String)? in
+                    guard let index = Int(key), index >= 0,
+                          value.range(of: "^[a-fA-F0-9]{40}$", options: .regularExpression) != nil else { return nil }
+                    return (index, value)
+                }.sorted { $0.0 < $1.0 }
+                guard ordered.count == objects.count,
+                      ordered.enumerated().allSatisfy({ $0.offset == $0.element.0 }) else { throw ClientCheckError.invalidJSON }
+                // The NGM file-level `hash` is not the uncompressed file hash.
+                // Authenticate each uncompressed object against its SHA-1.
+                files.append((path, ordered.map { $0.1 }.joined(), true))
+            }
+        } else {
+            guard let entries = manifest["files"] as? [[String: Any]], !entries.isEmpty else { throw ClientCheckError.invalidJSON }
+            for entry in entries {
+                guard let path = entry["path"] as? String, let hash = entry["sha256"] as? String else { throw ClientCheckError.invalidJSON }
+                // The standalone executable hotfix intentionally differs from
+                // the full-client digest; runDownload checks its own outcome.
+                if path.lowercased() == "maplestory.exe" { continue }
+                // Official major patches remove this obsolete installer helper.
+                // Its absence is expected; runtime/data files remain mandatory.
+                if path.lowercased() == "shortcuts.ini",
+                   !fileManager.fileExists(atPath: directory.appendingPathComponent(path).path) { continue }
+                files.append((path, hash, false))
             }
         }
-        guard let start = cleaned.firstIndex(of: "{"),
-              let end = cleaned.lastIndex(of: "}"),
-              start < end
-        else {
-            return nil
+        for (path, expected, sha1) in files {
+            try checkCancelled()
+            let components = path.replacingOccurrences(of: "\\", with: "/").components(separatedBy: "/")
+            guard !components.isEmpty, components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains(":") }) else {
+                throw ClientCheckError.invalidJSON
+            }
+            let file = components.reduce(directory) { $0.appendingPathComponent($1) }
+            guard file.resolvingSymlinksInPath().path == file.standardizedFileURL.path,
+                  try Self.updateDigest(file, sha1: sha1, chunkSize: ngmChunkSize, checkCancelled: checkCancelled).lowercased() == expected.lowercased() else {
+                throw NxdlDownloaderError.incompleteUpdate("更新後檔案未通過完整性檢查：\(path)。原安裝仍保留，可改用完整下載修復。")
+            }
         }
-        return String(cleaned[start...end])
+    }
+
+    private func completeClassicCompatibility(transaction: ClientUpdateTransaction,
+                                               checkCancelled: () throws -> Void) throws {
+        guard let source = ClientUpdateInspection.classicMarker(in: transaction.destination) else { throw ClientCheckError.invalidJSON }
+        let target: String
+        if let pinned = classicManifestTarget { target = pinned }
+        else {
+            let info = try fetchUpdateJSON(URL(string: "https://ngmapi.nexon.com/game-info/2982@2141")!, checkCancelled: checkCancelled)
+            guard let hash = info["manifest_name"] as? String else { throw ClientCheckError.invalidJSON }
+            target = hash
+        }
+        guard [source, target].allSatisfy({ $0.range(of: "^[a-fA-F0-9]{32}$", options: .regularExpression) != nil }) else { throw ClientCheckError.invalidJSON }
+        let base = "https://tw-ngm.maplestoryclassic.games.gamania.com/"
+        let patchManifest = try fetchUpdateJSON(URL(string: base + target + "-" + source)!, checkCancelled: checkCancelled)
+        let full = try fetchUpdateJSON(URL(string: base + target)!, checkCancelled: checkCancelled)
+        guard let entries = patchManifest["files"] as? [String: [String: Any]],
+              let targetFiles = full["files"] as? [String: [String: Any]],
+              let chunkSize = patchManifest["chunk_size"] as? Int, chunkSize > 0, chunkSize <= 16 * 1024 * 1024 else { throw ClientCheckError.invalidJSON }
+        var applied = 0
+        for (encoded, entry) in entries {
+            try checkCancelled()
+            guard let data = Data(base64Encoded: encoded), let path = String(data: data, encoding: .utf8) else { throw ClientCheckError.invalidJSON }
+            let components = path.replacingOccurrences(of: "\\", with: "/").components(separatedBy: "/")
+            guard components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains(":") }) else { throw ClientCheckError.invalidJSON }
+            let relative = components.joined(separator: "/")
+            let patch = transaction.working.appendingPathComponent("patchdata/patches/" + relative + ".nxdlpatch")
+            guard fileManager.fileExists(atPath: patch.path) else { continue } // nxdl removed successful streams.
+            guard let objects = entry["objects"] as? [String: String],
+                  let patchSize = entry["uncompressed_size"] as? Int, patchSize >= 0,
+                  let targetSize = targetFiles[encoded]?["uncompressed_size"] as? Int, targetSize >= 0 else { throw ClientCheckError.invalidJSON }
+            let ordered = objects.compactMap { key, hash -> (Int, String)? in
+                guard let index = Int(key), index >= 0,
+                      hash.range(of: "^[a-fA-F0-9]{40}$", options: .regularExpression) != nil else { return nil }
+                return (index, hash)
+            }.sorted { $0.0 < $1.0 }
+            guard ordered.count == objects.count, !ordered.isEmpty,
+                  ordered.enumerated().allSatisfy({ $0.offset == $0.element.0 }),
+                  (try patch.resourceValues(forKeys: [.fileSizeKey])).fileSize == patchSize,
+                  try Self.updateDigest(patch, sha1: true, chunkSize: chunkSize, checkCancelled: checkCancelled).lowercased() == ordered.map({ $0.1 }).joined().lowercased() else {
+                throw NxdlDownloaderError.incompleteUpdate("相容補丁未通過官方物件雜湊校驗。")
+            }
+            let original = transaction.destination.appendingPathComponent(relative)
+            let output = transaction.working.appendingPathComponent(relative)
+            let temporary = transaction.workspace.appendingPathComponent("compatible-\(UUID().uuidString)")
+            guard [original, patch, output].allSatisfy({ $0.resolvingSymlinksInPath().path == $0.standardizedFileURL.path }) else { throw ClientCheckError.invalidJSON }
+            try NGMDeltaCompatibility.apply(source: original, patch: patch, output: temporary,
+                expectedSize: UInt64(targetSize), checkCancelled: checkCancelled)
+            try fileManager.removeItem(at: output)
+            try fileManager.moveItem(at: temporary, to: output)
+            try fileManager.removeItem(at: patch)
+            applied += 1
+        }
+        guard applied > 0 else { throw NxdlDownloaderError.incompleteUpdate("沒有可安全續接的差分指令。") }
+        try target.write(to: transaction.working.appendingPathComponent("2982.manifest.hash"), atomically: true, encoding: .utf8)
+    }
+
+    private func synchronizeClassic(transaction: ClientUpdateTransaction, checkCancelled: () throws -> Void,
+                                    onUpdate: (NxdlDownloadUpdate) -> Void) throws {
+        let hash: String
+        if let pinned = classicManifestTarget { hash = pinned }
+        else {
+            let info = try fetchUpdateJSON(URL(string: "https://ngmapi.nexon.com/game-info/2982@2141")!, checkCancelled: checkCancelled)
+            guard let remote = info["manifest_name"] as? String else { throw ClientCheckError.invalidJSON }
+            hash = remote
+        }
+        guard hash.range(of: "^[a-fA-F0-9]{32}$", options: .regularExpression) != nil else { throw ClientCheckError.invalidJSON }
+        let manifest = try fetchUpdateJSON(URL(string: "https://tw-ngm.maplestoryclassic.games.gamania.com/\(hash)")!, checkCancelled: checkCancelled)
+        var progress = NxdlDownloadProgressState()
+        progress.phase = .checking
+        progress.statusMessage = "正在比對官方完整清單與差分結果…"
+        onUpdate(.progress(progress))
+        let result = try NGMClientSynchronization.synchronize(directory: transaction.working, scratch: transaction.workspace,
+            manifest: manifest, fetch: { try self.fetchUpdateData($0, checkCancelled: checkCancelled) },
+            checkCancelled: checkCancelled, report: {
+                progress.phase = .downloading; progress.statusMessage = $0
+                onUpdate(.progress(progress))
+            })
+        onUpdate(.message("官方清單同步完成：補齊 \(result.files) 個檔案、下載 \(result.objects) 個已校驗物件。"))
+        try hash.write(to: transaction.working.appendingPathComponent("2982.manifest.hash"), atomically: true, encoding: .utf8)
+    }
+
+    private func fetchUpdateJSON(_ url: URL, checkCancelled: () throws -> Void) throws -> [String: Any] {
+        let data = try fetchUpdateData(url, fresh: true, checkCancelled: checkCancelled)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw ClientCheckError.invalidJSON }
+        return object
+    }
+
+    private func fetchUpdateData(_ url: URL, fresh: Bool = false, checkCancelled: () throws -> Void) throws -> Data {
+        let result = UpdateJSONResult()
+        let semaphore = DispatchSemaphore(value: 0)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 60
+        if fresh { request.cachePolicy = .reloadIgnoringLocalCacheData }
+        let task = session.dataTask(with: request) { data, response, error in
+            result.data = data; result.status = (response as? HTTPURLResponse)?.statusCode; result.error = error
+            semaphore.signal()
+        }
+        task.resume()
+        defer { task.cancel() }
+        let deadline = Date().addingTimeInterval(60)
+        while semaphore.wait(timeout: .now() + 0.2) != .success {
+            try checkCancelled()
+            if Date() >= deadline { throw URLError(.timedOut) }
+        }
+        try checkCancelled()
+        if let error = result.error { throw error }
+        guard result.status == 200, let data = result.data, data.count <= 32 * 1024 * 1024 else { throw ClientCheckError.invalidJSON }
+        return data
+    }
+
+    private final class UpdateJSONResult: @unchecked Sendable {
+        var data: Data?; var status: Int?; var error: Error?
+    }
+
+    private static func updateDigest(_ url: URL, sha1: Bool, chunkSize: Int, checkCancelled: () throws -> Void) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { handle.closeFile() }
+        if sha1 {
+            var hashes = ""
+            while true {
+                try checkCancelled()
+                let hash: String? = autoreleasepool {
+                    let data = handle.readData(ofLength: chunkSize)
+                    if data.isEmpty { return nil }
+                    var digest = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
+                    data.withUnsafeBytes { raw in _ = CC_SHA1(raw.baseAddress, CC_LONG(data.count), &digest) }
+                    return digest.map { String(format: "%02x", $0) }.joined()
+                }
+                guard let hash else { return hashes }
+                hashes += hash
+            }
+        }
+        var one = CC_SHA1_CTX(), two = CC_SHA256_CTX()
+        if sha1 { CC_SHA1_Init(&one) } else { CC_SHA256_Init(&two) }
+        while true {
+            try checkCancelled()
+            let count: Int = autoreleasepool {
+                let data = handle.readData(ofLength: 1024 * 1024)
+                data.withUnsafeBytes { raw in
+                    if sha1 { _ = CC_SHA1_Update(&one, raw.baseAddress, CC_LONG(data.count)) }
+                    else { _ = CC_SHA256_Update(&two, raw.baseAddress, CC_LONG(data.count)) }
+                }
+                return data.count
+            }
+            if count == 0 { break }
+        }
+        var digest = [UInt8](repeating: 0, count: Int(sha1 ? CC_SHA1_DIGEST_LENGTH : CC_SHA256_DIGEST_LENGTH))
+        if sha1 { CC_SHA1_Final(&digest, &one) } else { CC_SHA256_Final(&digest, &two) }
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     private func runDownload(
         config: GameClientToolConfig,
         binary: URL,
         destination: URL,
+        operation: ClientUpdatePlan.Operation,
+        executableOnly: Bool = false,
+        epoch: UInt64,
         onUpdate: @escaping (NxdlDownloadUpdate) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        do {
-            try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
-            // Clear again immediately before Process.launch in case LaunchServices or
-            // another agent re-applied quarantine after ensureBinary returned.
-            try prepareBinaryForExecution(at: binary.path)
-        } catch {
-            completion(.failure(error))
-            return
-        }
-
-        onUpdate(.message(Self.downloadStatusMessage(for: config)))
-
-        // indicatif only emits TUI / OSC 9;4 progress when stdout is a TTY.
-        // A pipe gets status text on stdout and no live progress — use a PTY.
-        let pty: (master: FileHandle, slave: FileHandle)
-        do {
-            pty = try Self.openPseudoTerminal()
-        } catch {
-            completion(.failure(error))
-            return
-        }
-
-        let process = Process()
-        process.launchPath = binary.path
-        process.currentDirectoryPath = supportDirectory(for: config).path
-        process.arguments = config.downloadArguments(destinationPath: destination.path)
-        var environment = ProcessInfo.processInfo.environment
-        environment["TERM"] = "xterm-256color"
-        environment["COLORTERM"] = "truecolor"
-        process.environment = environment
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = pty.slave
-        process.standardError = pty.slave
-
-        let masterHandle = pty.master
-        var lastProgressLine = ""
-        var outputLines: [String] = []
-        let streamParser = NxdlOutputStreamParser()
-        // PTY reads can split a multi-byte UTF-8 sequence across callbacks;
-        // hold incomplete trailing bytes until the next chunk arrives.
-        let utf8Lock = NSLock()
-        var utf8Carry = Data()
-
-        let emit: ([NxdlDownloadUpdate]) -> Void = { updates in
-            for update in updates {
-                onUpdate(update)
-                switch update {
-                case let .progress(state):
-                    if let overall = state.overall {
-                        lastProgressLine = "\(overall.downloadedText)/\(overall.totalText)"
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try self.fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+                try self.prepareBinaryForExecution(at: binary.path)
+                let pty = try Self.openPseudoTerminal()
+                defer { pty.master.closeFile() }
+                let process = Process()
+                process.launchPath = binary.path
+                process.currentDirectoryPath = self.supportDirectory(for: config).path
+                if executableOnly {
+                    process.arguments = [config.gameAlias, "--download", destination.path, "--filter=MapleStory.exe", "--no-gui"]
+                } else if operation == .patch {
+                    if let target = self.classicManifestTarget,
+                       target.range(of: "^[a-fA-F0-9]{32}$", options: .regularExpression) == nil { throw ClientCheckError.invalidJSON }
+                    process.arguments = config == .cmsdlMapleStory
+                        ? [config.gameAlias, "--patch", "latest", destination.path, "--no-gui"]
+                        : [config.gameAlias, "--patch"] + (self.classicManifestTarget.map { [$0] } ?? []) + [destination.path]
+                } else { process.arguments = config.downloadArguments(destinationPath: destination.path) }
+                var environment = ProcessInfo.processInfo.environment
+                environment["TERM"] = "xterm-256color"
+                process.environment = environment
+                process.standardInput = FileHandle.nullDevice
+                process.standardOutput = pty.slave
+                process.standardError = pty.slave
+                do { try self.launch(process, epoch: epoch) }
+                catch { pty.slave.closeFile(); throw error }
+                pty.slave.closeFile()
+                defer { self.clearProcess(process) }
+                onUpdate(.message(operation == .patch ? "正在套用更新…" : Self.downloadStatusMessage(for: config)))
+                let parser = NxdlOutputStreamParser()
+                var carry = Data(), lines: [String] = []
+                var buffer = [UInt8](repeating: 0, count: 32768)
+                var warning: String?
+                var unsupportedPatchOpcode: String?
+                var minorInstalled = false
+                var executableRetained = false
+                var noMinorPublished = false
+                func emit(_ updates: [NxdlDownloadUpdate]) {
+                    for update in updates {
+                        onUpdate(update)
+                        let message: String
+                        switch update {
+                        case let .message(text): message = text
+                        case let .progress(state): message = state.statusMessage
+                        }
+                        if !message.isEmpty {
+                            lines.append(message)
+                            if lines.count > 200 { lines.removeFirst(lines.count - 200) }
+                            let lower = message.lowercased()
+                            if lower.contains("unknown patch opcode") { unsupportedPatchOpcode = message }
+                            if lower.contains("maplestory.exe updated.") || lower.contains("replaced with the downloaded hotfix") { minorInstalled = true }
+                            if lower.contains("maplestory.exe: kept as is") || lower.contains("keeping the existing file") { executableRetained = true }
+                            if lower.contains("no minor patch available") || lower.contains("no minor patch.") { noMinorPublished = true }
+                            if lower.contains("warning:") && (lower.contains("patch") || lower.contains("maplestory.exe")) {
+                                warning = "主程式小更新尚未確認完成，請稍後再試；已保留既有遊戲檔案。"
+                            }
+                        }
                     }
-                    if !state.statusMessage.isEmpty {
-                        outputLines.append(state.statusMessage)
-                    }
-                case let .message(message):
-                    lastProgressLine = message
-                    outputLines.append(message)
                 }
-            }
-        }
-
-        masterHandle.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                return
-            }
-            let chunk: String = {
-                utf8Lock.lock()
-                defer { utf8Lock.unlock() }
-                utf8Carry.append(data)
-                return Self.drainDecodableUTF8(from: &utf8Carry)
-            }()
-            guard !chunk.isEmpty else { return }
-            emit(streamParser.ingest(chunk))
-        }
-
-        runningProcess = process
-        process.terminationHandler = { [weak self] finished in
-            masterHandle.readabilityHandler = nil
-            let remaining = masterHandle.readDataToEndOfFile()
-            let tailChunk: String = {
-                utf8Lock.lock()
-                defer { utf8Lock.unlock() }
-                if !remaining.isEmpty {
-                    utf8Carry.append(remaining)
+                while true {
+                    let count = Darwin.read(pty.master.fileDescriptor, &buffer, buffer.count)
+                    if count > 0 {
+                        carry.append(contentsOf: buffer.prefix(count))
+                        emit(parser.ingest(Self.drainDecodableUTF8(from: &carry)))
+                    } else if count < 0 && errno == EINTR { continue }
+                    else { break }
                 }
-                guard !utf8Carry.isEmpty else { return "" }
-                // Final flush: replace any still-incomplete bytes so we do not drop
-                // an otherwise-valid trailing progress frame.
-                let tail = String(data: utf8Carry, encoding: .utf8)
-                    ?? String(decoding: utf8Carry, as: UTF8.self)
-                utf8Carry.removeAll()
-                return tail
-            }()
-            if !tailChunk.isEmpty {
-                emit(streamParser.ingest(tailChunk))
-            }
-            emit(streamParser.finish())
-
-            masterHandle.closeFile()
-            self?.runningProcess = nil
-
-            if finished.terminationReason == .uncaughtSignal {
-                completion(.failure(NxdlDownloaderError.cancelled))
-                return
-            }
-
-            if finished.terminationStatus == 0 {
+                if !carry.isEmpty { emit(parser.ingest(String(decoding: carry, as: UTF8.self))) }
+                emit(parser.finish())
+                process.waitUntilExit()
+                guard self.currentEpoch == epoch, process.terminationReason != .uncaughtSignal else {
+                    throw NxdlDownloaderError.cancelled
+                }
+                guard process.terminationStatus == 0 else {
+                    throw NxdlDownloaderError.processFailed(process.terminationStatus,
+                        unsupportedPatchOpcode ?? NxdlFailureMessage.preferred(from: lines, lastProgressLine: ""))
+                }
+                if let warning { throw NxdlDownloaderError.incompleteUpdate(warning) }
+                self.processLock.lock()
+                self.completionSummary = config == .cmsdlMapleStory
+                    ? (executableRetained ? "已保留現有主程式，避免覆蓋遊戲端的小更新；遊戲檔案驗證完成。"
+                       : minorInstalled ? "主程式小更新已套用；本次作業完成。"
+                       : noMinorPublished ? "本次未發現可用的主程式小更新；遊戲檔案作業完成。"
+                       : "遊戲檔案作業完成；主程式小更新尚未確認，必要時請再次檢查。")
+                    : "本次經典版作業完成；可登入遊戲。"
+                self.processLock.unlock()
                 completion(.success(()))
-            } else {
-                let message = NxdlFailureMessage.preferred(
-                    from: outputLines,
-                    lastProgressLine: lastProgressLine
-                )
-                completion(.failure(NxdlDownloaderError.processFailed(
-                    finished.terminationStatus,
-                    message
-                )))
-            }
+            } catch { completion(.failure(error)) }
         }
-
-        process.launch()
-        // Close slave in the parent so we get EOF on master when the child exits.
-        pty.slave.closeFile()
     }
 
     private static func downloadStatusMessage(for config: GameClientToolConfig) -> String {

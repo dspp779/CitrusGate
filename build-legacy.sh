@@ -19,11 +19,30 @@ for arg in "$@"; do
     esac
 done
 
-preferred_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
-if [[ -d "$preferred_sdk" ]]; then
-    sdk="$preferred_sdk"
-else
-    sdk="$(xcrun --sdk macosx --show-sdk-path)"
+source "$project_dir/scripts/build-environment.zsh"
+
+legacy_runtime="${LEGACY_SWIFT_RUNTIME_DIR:-${swift_bin:h:h}/lib/swift/macosx}"
+cached_compat="$project_dir/.build/toolchains/swift-6.1.2-compat/macosx"
+if [[ -z "${LEGACY_SWIFT_RUNTIME_DIR:-}" && -f "$cached_compat/libswiftCompatibility50.a" ]] && \
+   ! lipo -archs "$legacy_runtime/libswiftCompatibility50.a" | grep -qw x86_64; then
+    legacy_runtime="$cached_compat"
+fi
+if [[ ! -f "$legacy_runtime/libswiftCompatibility50.a" ]] ||    ! lipo -archs "$legacy_runtime/libswiftCompatibility50.a" | grep -qw x86_64; then
+    print -u2 "Legacy requires x86_64 Swift back-deployment libraries. Run ./scripts/fetch-legacy-compat.sh, or set LEGACY_SWIFT_RUNTIME_DIR to a compatible official Swift toolchain's usr/lib/swift/macosx directory."
+    exit 1
+fi
+
+compat_flags=()
+if [[ "$legacy_runtime" != "${swift_bin:h:h}/lib/swift/macosx" ]]; then
+    # Recent CLT distributions omit Intel back-deployment archives. Supply the
+    # official archives explicitly; do not change the dynamic runtime search path.
+    compat_flags=(-disable-autolinking-runtime-compatibility
+        -disable-autolinking-runtime-compatibility-concurrency
+        -disable-autolinking-runtime-compatibility-dynamic-replacements)
+    for archive in "$legacy_runtime"/libswiftCompatibility*.a; do
+        lipo -archs "$archive" | grep -qw x86_64 || continue
+        compat_flags+=(-Xlinker -force_load -Xlinker "$archive")
+    done
 fi
 
 export TMPDIR="$build_dir/tmp"
@@ -33,15 +52,17 @@ mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources/GameImages"
 sources=("$source_dir"/*.swift \
   "$project_dir/Sources/NxdlDownloader.swift" \
   "$project_dir/Sources/GameClientDiskGate.swift" \
-  "$project_dir/Sources/GGMDataParam.swift" \
+  "$project_dir/Sources/ClientSupport.swift" \
+    "$project_dir/Sources/GGMDataParam.swift" \
   "$project_dir/Sources/GGMManifest.swift" \
   "$project_dir/Sources/GGMManifestStore.swift" \
   "$project_dir/Sources/GGMManifestUpdater.swift")
 
-swiftc -swift-version 5 \
+"$swift_bin" -swift-version 5 \
     -sdk "$sdk" \
     -module-cache-path "$module_cache" \
     -target x86_64-apple-macosx10.12 \
+    "${compat_flags[@]}" \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$build_dir/BeanfunOTPLegacy" \
     "${sources[@]}"
@@ -50,32 +71,16 @@ cp "$resource_dir/Info.plist" "$app_dir/Contents/Info.plist"
 cp "$modern_resources/GameImages/"* "$app_dir/Contents/Resources/GameImages/"
 cp "$modern_resources/ggm-manifest.json" "$app_dir/Contents/Resources/ggm-manifest.json"
 
-# Icon: same squircle sizing as Modern build.sh so Dock silhouette matches neighbours.
-icon_source="$modern_resources/AppIcon.png"
-icon_master="$build_dir/AppIcon-master.png"
-python3 "$modern_resources/generate_icon.py" "$icon_source" "$icon_master"
-
-
-iconset_dir="$build_dir/AppIcon.iconset"
-rm -rf "$iconset_dir"
-mkdir -p "$iconset_dir"
-sips -z 16 16 "$icon_master" --out "$iconset_dir/icon_16x16.png" >/dev/null
-sips -z 32 32 "$icon_master" --out "$iconset_dir/icon_16x16@2x.png" >/dev/null
-sips -z 32 32 "$icon_master" --out "$iconset_dir/icon_32x32.png" >/dev/null
-sips -z 64 64 "$icon_master" --out "$iconset_dir/icon_32x32@2x.png" >/dev/null
-sips -z 128 128 "$icon_master" --out "$iconset_dir/icon_128x128.png" >/dev/null
-sips -z 256 256 "$icon_master" --out "$iconset_dir/icon_128x128@2x.png" >/dev/null
-sips -z 256 256 "$icon_master" --out "$iconset_dir/icon_256x256.png" >/dev/null
-sips -z 512 512 "$icon_master" --out "$iconset_dir/icon_256x256@2x.png" >/dev/null
-sips -z 512 512 "$icon_master" --out "$iconset_dir/icon_512x512.png" >/dev/null
-sips -z 1024 1024 "$icon_master" --out "$iconset_dir/icon_512x512@2x.png" >/dev/null
-iconutil -c icns "$iconset_dir" -o "$app_dir/Contents/Resources/AppIcon.icns"
+# Native AppKit icon generator: no third-party Python packages or iconutil required.
+"$swift_bin" -sdk "$sdk" -module-cache-path "$module_cache" \
+    "$project_dir/Resources/generate_icon.swift" -o "$build_dir/generate-icon"
+"$build_dir/generate-icon" "$project_dir/Resources/AppIcon.png" "$app_dir/Contents/Resources/AppIcon.icns"
 
 cp "$build_dir/BeanfunOTPLegacy" "$app_dir/Contents/MacOS/BeanfunOTPLegacy"
 chmod 755 "$app_dir/Contents/MacOS/BeanfunOTPLegacy"
 
 # Embed Swift libs referenced via @rpath
-swift_root="$(xcrun --find swiftc)"
+swift_root="$swift_bin"
 swift_root="$(cd "$(dirname "$swift_root")/.." && pwd)"
 # Common locations for toolchain macosx swift libs:
 for candidate in \
@@ -168,11 +173,12 @@ if [[ "$do_release_sign" == true ]]; then
         fi
         codesign --force --timestamp --options runtime --sign "$IDENTITY" --keychain "$KEYCHAIN_PATH" "$app_dir"
     else
-        echo "Warning: Developer ID identity not found, falling back to ad-hoc signing."
-        codesign --force --deep --sign - "$app_dir"
+        print -u2 "Release requires a Developer ID identity; refusing ad-hoc fallback."
+        exit 1
     fi
 
-    if [[ -n "$IDENTITY" && -f "$api_key_file" && -n "$key_id" && -n "$issuer_id" ]]; then
+    [[ -f "$api_key_file" && -n "$key_id" && -n "$issuer_id" ]] || { print -u2 "Release requires Apple notarization credentials."; exit 1; }
+    if [[ -n "$IDENTITY" ]]; then
         echo "Notarizing app bundle with Apple notarization service..."
         NOTARIZE_ZIP="$build_dir/notarize.zip"
         rm -f "$NOTARIZE_ZIP"
@@ -198,4 +204,9 @@ otool -l "$app_dir/Contents/MacOS/BeanfunOTPLegacy" | grep -E -A3 'LC_VERSION_MI
 lipo -info "$app_dir/Contents/MacOS/BeanfunOTPLegacy"
 echo "Code signature check:"
 codesign --verify --deep --strict --verbose "$app_dir"
-spctl --assess --type execute --verbose "$app_dir" || true
+if [[ "$do_release_sign" == true ]]; then
+    xcrun stapler validate "$app_dir"
+    spctl --assess --type execute --verbose "$app_dir"
+else
+    echo "Development build: ad-hoc signed; Apple notarization is not requested."
+fi

@@ -1,240 +1,57 @@
-# nxdl 與新楓之谷：經典版下載
+# nxdl 與經典版下載／更新
 
-最後更新：2026-07-30
+最後更新：2026-10-30
 
-本文說明 Beanfun OTP 如何用 [nxdl](https://github.com/HikariCalyx/nxdl) 下載經典版客戶端，以及整合時要注意的路徑問題與進度取得方式。
-
-## 這是什麼
-
-[nxdl](https://github.com/HikariCalyx/nxdl) 是獨立的命令列工具，可依 Nexon／Gamania 的 NGM manifest 下載遊戲檔。經典版別名為 `tms_cw`。
-
-Beanfun OTP **不**內嵌 nxdl 原始碼；執行時會下載並快取固定版本的 `nxdl_darwin`，再以子行程呼叫。
+Beanfun OTP 以子行程執行固定版本的官方上游工具；不內嵌 nxdl 原始碼。
 
 | 項目 | 值 |
 | --- | --- |
-| 目前釘選版本 | `v0.1.2-prerelease2` |
-| 二進位 | `nxdl_darwin` |
-| SHA-256 | `a0cf22ae06f94268a33d3bed847619f70842fbd3b0ee758cd0c607782d31a1f7` |
+| 上游版本 | `v0.1.2-prerelease9`（預發行版） |
+| 二進位 | `nxdl_darwin`，arm64 + x86_64 |
+| SHA-256 | `e200004877ce629a1f3103da2bbb1c3235c15dafcfe7996ac0907e09f481e34e` |
 | 遊戲別名 | `tms_cw` |
-| 主程式檔名 | `Maplestory_Classic.exe` |
-| App 快取路徑 | `~/Library/Application Support/local.ogom.beanfunotp/nxdl/nxdl_darwin` |
+| 主程式 | `Maplestory_Classic.exe` |
+| 工具最低系統 | macOS 11.0（已檢查兩個架構的 Mach-O） |
 
-版本常數見 `Sources/NxdlDownloader.swift` 的 `NxdlDownloader.releaseTag`／`NxdlBinaryIntegrity.expectedSHA256Hex`。升級 nxdl 前請先重測路徑還原與進度解析，並更新 SHA-256。
+來源：[release](https://github.com/HikariCalyx/nxdl/releases/tag/v0.1.2-prerelease9)。每次重用／下載快取都驗證 SHA-256；不自動追蹤 latest。
 
-下載或重用快取時都會驗證 SHA-256；校驗失敗會刪除快取並重新下載（仍失敗則回報錯誤）。
+## 路徑問題
 
----
+上游 prerelease5 已加入 `relpath`，在解碼 manifest 與寫入檔案時統一 Windows 分隔符號。[上游修正](https://github.com/HikariCalyx/nxdl/blob/v0.1.2-prerelease5/src/relpath.rs)
 
-## 手動使用方式
+新版不再於每次下載結束後掃描並搬移整棵目錄。一般模式「更多選項 → 修復舊版下載路徑」保留手動相容修復：拒絕穿越路徑、磁碟代號、符號連結逸出與既有目標衝突，不刪除或覆寫衝突檔案。沒有錯誤檔名時為 no-op。
 
-```bash
-# 下載（將客戶端寫入 ./classic）
-./nxdl_darwin tms_cw --download ./classic
+## 差分更新邊界
+
+```sh
+nxdl_darwin tms_cw --check --json
+nxdl_darwin tms_cw --download /path/to/client
+nxdl_darwin tms_cw --patch /path/to/client
 ```
 
-成功後目錄內應有 `Maplestory_Classic.exe` 與資料檔。Beanfun OTP 的「下載經典版客戶端」等同於此指令，並會自動選資料夾、清 quarantine、還原路徑、設定主程式。
+- 新下載成功後，上游寫入 `2982.manifest.hash`。
+- 舊安裝沒有有效 marker 時，App 選擇完整下載，不能從檔案大小猜測來源版本。
+- 有有效 marker 才提供差分路線。marker 支援上游實際使用的 32 字元雜湊；也接受 40／64 字元十六進位。
+- marker 與遠端相同代表版本紀錄一致，不代表每個檔案經過完整性檢查；介面不再宣稱「檔案完整且已是最新」。
+- 差分失敗時明確顯示改走完整檔案修復；兩種路線均在私人副本處理，完成目標物件校驗後才切換安裝。
+- 取消保留原安裝並清除私人副本。重試從乾淨來源重新開始，可能重新下載補丁或完整檔案。
 
-其他注意：
+## 進度、空間與相容性
 
-1. **檔案很大**（約數 GiB），請預留磁碟空間。
-2. 從網路下載的 `nxdl_darwin` 可能帶 `com.apple.quarantine`；App 每次執行前會解除。手動測試可：
-   ```bash
-   xattr -d com.apple.quarantine ./nxdl_darwin
-   chmod +x ./nxdl_darwin
-   ```
-3. 進度條（TUI／OSC）只有在 **stdout 是 TTY** 時才會出現；把輸出導向 pipe／檔案時通常只剩狀態文字、沒有即時進度。
+使用 PTY 擷取 indicatif；單一序列讀取流程處理 ANSI、換行、UTF-8 分段與程序結束，避免輸出讀取競爭。OSC 9;4 不作為下載總量來源。
 
----
+既有目錄的磁碟檢查保守預留兩份完整大小，以涵蓋私人副本及補丁展開暫存；補丁路線再加下載量（未知時採完整大小）。APFS 共享複製通常使用較少空間。預留不是實際網路下載量，另加至少 1 GiB 安全空間。
 
-## 磁碟空間檢查（下載前）
+Legacy 在 macOS 10.12–10.15 仍可登入；新版下載器本身要求 macOS 11，較舊系統會收到明確說明。
 
-經典版與新楓之谷下載**共用**同一套三級規則。下載前先執行 `--check --json` 取得 `total_size`，再與目的地磁碟的可用空間比較：
+2026-10-29 已在隔離副本完成 173 個檔案、3,421,949,015 bytes 的完整下載，確認零反斜線檔名、marker 正確寫入，並實測同版本差分 no-op、缺少／無效 marker 的失敗邊界。現已另完成官方歷史 1.10.0→1.13.1 真實跨版本差分。
 
-```bash
-./nxdl_darwin tms_cw --check --json
-```
+另已從官方舊版清單重建完整舊客戶端，實測差分不可用時的完整更新替代路線、直接完整修復，以及實際下載取消／恢復。真實工具的合成套用中斷測試重現了直接重套差分可能誤報成功的風險；新版透過私人副本及提交前驗證處理。完整證據與限制見 [D 驗證紀錄](differential-update-validation.md)。
 
-`--check --json` 範例輸出：
+## 官方歷史差分的相容處理
 
-```json
-{"appid":"2982@2141","game_name":"新楓之谷：經典版",...,"total_size":2962637533}
-```
+已從官方清單驗證來源 `9ae5648c8ec84da1ac5d6d94c8993b68`（1.10.0），透過 HTTP 200 的差分清單更新至 `457e2f2938a243aba86bb472828d6fb8`（1.13.1）。App 一般操作仍選擇官方目前版本，歷史目標僅供內部實測。
 
-App 只解析 `total_size`（位元組）；解析失敗則不開始下載。
+真實補丁遇到 nxdl prerelease9 未支援的 `0x18`，App 以經界限檢查的相容解碼完成；補丁物件先校驗 SHA-1，使用未修改的來源檔。官方 25 項差分未涵蓋所有目標檔案，後續補齊／修復 33 檔、373 個物件，全部目標物件通過 SHA-1 才提交。官方 binary 固定值未修改。
 
-判定順序（`DiskSpaceGate.evaluate`；硬下限 `minimum = total_size + 1 GiB` 優先）：
-
-1. **硬下限**：可用空間 < `total_size + 1 GiB` → **阻擋**下載；僅顯示錯誤，無法繼續
-2. **否則**，若可用空間 < `total_size × 1.05` → 警告對話框，可選 **「仍要下載」** 或取消
-3. **否則** → 直接下載；**不**顯示警告
-
-其中 `1 GiB = 1024³` 位元組。實作見 `Sources/GameClientDiskGate.swift` 的 `DiskSpaceGate.evaluate`。
-
-當 `total_size < 20 GiB` 時，`total_size × 1.05` < `total_size + 1 GiB`，警告帶不存在；僅在可用空間 ≥ `total_size + 1 GiB` 時才能下載（直接下載，無警告）。
-
-新楓之谷 cmsdl 的 `--check --json` 與相同規則見 [`cmsdl-maplestory-download.md`](cmsdl-maplestory-download.md#磁碟空間檢查下載前)。
-
----
-
-## 下載後路徑 workaround（必須釘版本）
-
-### 現象
-
-此版本 nxdl 在 macOS 上，可能把 Windows 風格路徑當成**單一檔名**寫入，basename 內含反斜線 `\`，例如：
-
-```text
-Maplestory_Classic_Data\Plugins\x86_64\VuplexWebViewChromium\locales\af.pak
-```
-
-正確結構應為：
-
-```text
-Maplestory_Classic_Data/Plugins/x86_64/VuplexWebViewChromium/locales/af.pak
-```
-
-若不還原，遊戲檔案樹不完整，啟動會失敗。
-
-### App 作法
-
-下載結束後，`NxdlDownloader.normalizeWindowsPathFilenames(in:)` 會：
-
-1. 掃目的地目錄
-2. 找出 basename 含 `\` 的項目
-3. 依 `\` 拆成目錄層級並 `move` 到真實路徑
-
-單元測試覆蓋 `WindowsPathFilenameNormalizer` 與實際落盤案例。
-
-### 為什麼要 pin version
-
-路徑行為屬於 nxdl 實作細節，之後 release 可能：
-
-- 修好（不再產生 `\` 檔名）→ 還原邏輯仍應無害（找不到就不做事）
-- 改用其他錯誤編碼 → 現有還原可能不夠
-
-因此 App **釘選** `v0.1.2-prerelease2`，不要自動追 `latest`。換版本時請：
-
-1. 手動下載到空目錄一次
-2. 確認是否仍有 `\` 檔名
-3. 跑 `./test.sh` 與實機下載／啟動
-4. 再改 `releaseTag` 與下載 URL
-
----
-
-## 進度取得：TUI 與 OSC 9;4
-
-nxdl 透過 [indicatif](https://crates.io/crates/indicatif) 輸出進度。在支援的終端機（例如 Ghostty）會同時看到：
-
-1. **TUI 文字進度**：終端機內容區的進度列（含總量、速度、ETA、各檔）
-2. **OSC 9;4**：終端機**原生**頂部進度條（ConEmu／Ghostty／Windows Terminal）
-
-### TUI 文字進度（App 採用）
-
-整體進度列範例：
-
-```text
-⠙ [00:00:14] [=============>--------------------------] 950.77 MiB/2.76 GiB (65.06 MiB/s, ETA 29s)
-```
-
-可解析出：
-
-| 欄位 | 範例 |
-| --- | --- |
-| 已用時間 | `00:00:14` |
-| 已下載／總量 | `950.77 MiB` / `2.76 GiB` |
-| 速度 | `65.06 MiB/s` |
-| 預估剩餘時間 | `ETA 29s`（UI 顯示為「預估剩餘時間 29 秒」） |
-| 進度比例 | 由 `950.77 MiB / 2.76 GiB` 換算為位元組後相除（ASCII bar 僅作 fallback） |
-
-平行下載的各檔列（行首空白）範例：
-
-```text
-  [===>---------------------]  84.00 MiB/586.71 MiB ( 6.88 MiB/s) Maplestory_Classic_Data\...\spritesheet.bundle
-```
-
-**優點**：資訊完整，適合做成下載對話框。  
-**缺點**：需處理 ANSI、`\r` 原地更新；格式隨 indicatif／nxdl 可能變動。
-
-Beanfun OTP **只依 TUI 解析**，在進度視窗顯示總量、速度、預估剩餘時間，以及「正在下載 〈檔名〉」文字（多執行緒同時下載時，同一畫格的檔名以 `, ` 併列；不顯示各檔進度條）。整體總量（例：`2.76 GiB`）一律由這行文字解析而來，程式內沒有任何固定值。
-
-### OSC 9;4（僅文件說明；App 不採用）
-
-格式：
-
-```text
-ESC ] 9 ; 4 ; <state> ; <progress> BEL
-# 或 ST 結尾：ESC ]
-```
-
-| state | 含義 |
-| --- | --- |
-| 0 | 清除 |
-| 1 | 正常進度（0–100） |
-| 2 | 錯誤 |
-| 3 | 不確定 |
-| 4 | 暫停／警告（indicatif 下載中常用此 state） |
-
-實測片段：`\x1b]9;4;4;42\x1b\\` → 約 42%。
-
-**優點**：協定簡單、只要百分比。  
-**缺點**：沒有 MiB／速度／ETA，不足以取代對話框所需資訊。
-
-App **不**用 OSC 驅動 UI；`stripANSI` 會去掉 OSC，避免干擾 TUI 解析。若將來要做 Dock／精簡百分比指示，可再接 OSC。
-
-### 必須用 PTY
-
-| 輸出方式 | 狀態文字 | TUI 進度 | OSC 9;4 |
-| --- | --- | --- | --- |
-| 真實終端機／PTY | 有 | 有 | 有 |
-| `Pipe`（非 TTY） | 多半只有摘要 | **無** | **無** |
-
-indicatif 在非 TTY 會關閉即時進度。因此 `NxdlDownloader` 以 `openpty` 建立虛擬終端，把 nxdl 的 stdout／stderr 接到 PTY slave，再從 master 讀取並解析 TUI。
-
----
-
-## 檢查更新（App UI）
-
-若已設定有效 `Maplestory_Classic.exe` 路徑，App 同樣提供手動「檢查更新」。最新狀態下的強制路徑按鈕標示為「完整下載」（非「嘗試更新」），因 nxdl 深度更新會重新下載整包客戶端。
-
----
-
-## 在 Beanfun OTP 中的流程
-
-```text
-使用者選下載資料夾
-        │
-        ▼
-確保 nxdl_darwin（釘選版＋SHA-256）就緒並清 quarantine
-        │
-        ▼
-執行：nxdl_darwin tms_cw --check --json → total_size
-        │
-        ▼
-讀取目的地磁碟可用空間 → 磁碟空間檢查（ok / warn / blocked）
-        │
-        ├─ blocked → 錯誤提示；停止
-        ├─ warn → 確認「仍要下載」；取消則停止
-        └─ ok → 繼續
-        │
-        ▼
-PTY 執行：nxdl_darwin tms_cw --download <dir>
-        │
-        ├─ 解析 TUI → 進度對話框（總量／速度／預估剩餘時間）
-        │
-        ▼
-normalizeWindowsPathFilenames（\ → 真實目錄；保留整體進度）
-        │
-        ▼
-尋找 Maplestory_Classic.exe → 寫入主程式路徑
-```
-
-相關檔案：
-
-| 檔案 | 角色 |
-| --- | --- |
-| `Sources/NxdlDownloader.swift` | 下載、PTY、TUI 解析、路徑還原 |
-| `Sources/GameClientDiskGate.swift` | `--check --json` 解析、磁碟空間三級判定、可用空間讀取 |
-| `Sources/ClassicDownloadProgressView.swift` | Modern 進度 sheet |
-| `Legacy/Sources/ClassicDownloadProgressWindow.swift` | Legacy 進度視窗 |
-| `Sources/AppModel.swift` / `Legacy/Sources/AppController.swift` | 觸發下載、磁碟 gate 對話框與取消 |
-
-玩家操作步驟見 [`macos-player-guide-classic.md`](macos-player-guide-classic.md)。
+實際下載、檔案套用及物件同步三階段均完成取消／重試；每次原來源逐檔 SHA-256 不變。這條已驗證路線不保證所有歷史版本配對可用；差分不可用時仍走完整檔案修復。詳見 [D 驗證紀錄](differential-update-validation.md)。

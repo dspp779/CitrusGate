@@ -27,6 +27,7 @@ enum ClassicUpdateStatus: Equatable {
     case checking
     case upToDate
     case updateAvailable
+    case completed
     case maintenanceOrError(String)
 }
 
@@ -39,7 +40,7 @@ enum NexonPlugHandlerStatus {
 
 enum ClientUpdateUI {
     static func forceUpdateButtonTitle(gameID: String) -> String {
-        gameID == GameDefinition.mapleStoryClassic.id ? "完整下載" : "嘗試更新"
+        gameID == GameDefinition.mapleStoryClassic.id ? "完整下載" : "檢查並修復檔案"
     }
 }
 
@@ -127,7 +128,7 @@ struct GameDefinition: Hashable {
         name: "新楓之谷",
         serviceCode: "610074",
         serviceRegion: "T9",
-        imageName: "maplestory.jpg",
+        imageName: "maplestory-logo.png",
         executableName: "MapleStory.exe",
         launchStyle: .mapleStory,
         accountFlow: .gameZone,
@@ -165,7 +166,7 @@ struct GameDefinition: Hashable {
             name: "艾爾之光",
             serviceCode: "300148",
             serviceRegion: "AF",
-            imageName: "elsword.jpg",
+            imageName: "elsword-logo.png",
             executableName: "elsword.exe",
             launchStyle: .elsword,
             accountFlow: .gameZone,

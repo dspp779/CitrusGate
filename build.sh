@@ -19,12 +19,7 @@ for arg in "$@"; do
     esac
 done
 
-preferred_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
-if [[ -d "$preferred_sdk" ]]; then
-    sdk="$preferred_sdk"
-else
-    sdk="$(xcrun --sdk macosx --show-sdk-path)"
-fi
+source "$project_dir/scripts/build-environment.zsh"
 
 export TMPDIR="$build_dir/tmp"
 mkdir -p "$build_dir/arm64" "$build_dir/x86_64" "$module_cache" "$TMPDIR"
@@ -38,11 +33,11 @@ common_flags=(
 )
 
 echo "Building arm64…"
-swiftc "${common_flags[@]}" -target arm64-apple-macosx13.0 \
+"$swift_bin" "${common_flags[@]}" -target arm64-apple-macosx13.0 \
     -o "$build_dir/arm64/BeanfunOTP" "${sources[@]}"
 
 echo "Building x86_64…"
-swiftc "${common_flags[@]}" -target x86_64-apple-macosx13.0 \
+"$swift_bin" "${common_flags[@]}" -target x86_64-apple-macosx13.0 \
     -o "$build_dir/x86_64/BeanfunOTP" "${sources[@]}"
 
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
@@ -51,25 +46,10 @@ cp "$resource_dir/ggm-manifest.json" "$app_dir/Contents/Resources/ggm-manifest.j
 mkdir -p "$app_dir/Contents/Resources/GameImages"
 cp "$resource_dir/GameImages"/* "$app_dir/Contents/Resources/GameImages/"
 
-# Composite onto plate, apply squircle at ~82% canvas fill (Apple template sizing)
-# so Dock silhouette matches neighbouring apps instead of looking one size larger.
-icon_master="$build_dir/AppIcon-master.png"
-python3 "$resource_dir/generate_icon.py" "$icon_source" "$icon_master"
-
-
-rm -rf "$iconset_dir"
-mkdir -p "$iconset_dir"
-sips -z 16 16 "$icon_master" --out "$iconset_dir/icon_16x16.png" >/dev/null
-sips -z 32 32 "$icon_master" --out "$iconset_dir/icon_16x16@2x.png" >/dev/null
-sips -z 32 32 "$icon_master" --out "$iconset_dir/icon_32x32.png" >/dev/null
-sips -z 64 64 "$icon_master" --out "$iconset_dir/icon_32x32@2x.png" >/dev/null
-sips -z 128 128 "$icon_master" --out "$iconset_dir/icon_128x128.png" >/dev/null
-sips -z 256 256 "$icon_master" --out "$iconset_dir/icon_128x128@2x.png" >/dev/null
-sips -z 256 256 "$icon_master" --out "$iconset_dir/icon_256x256.png" >/dev/null
-sips -z 512 512 "$icon_master" --out "$iconset_dir/icon_256x256@2x.png" >/dev/null
-sips -z 512 512 "$icon_master" --out "$iconset_dir/icon_512x512.png" >/dev/null
-sips -z 1024 1024 "$icon_master" --out "$iconset_dir/icon_512x512@2x.png" >/dev/null
-iconutil -c icns "$iconset_dir" -o "$app_dir/Contents/Resources/AppIcon.icns"
+# Native AppKit icon generator: no third-party Python packages or iconutil required.
+"$swift_bin" -sdk "$sdk" -module-cache-path "$module_cache" \
+    "$project_dir/Resources/generate_icon.swift" -o "$build_dir/generate-icon"
+"$build_dir/generate-icon" "$project_dir/Resources/AppIcon.png" "$app_dir/Contents/Resources/AppIcon.icns"
 
 lipo -create \
     "$build_dir/arm64/BeanfunOTP" \
@@ -127,11 +107,12 @@ if [[ "$do_release_sign" == true ]]; then
         echo "Signing with Developer ID identity: $IDENTITY"
         codesign --force --timestamp --options runtime --sign "$IDENTITY" --keychain "$KEYCHAIN_PATH" "$app_dir"
     else
-        echo "Warning: Developer ID identity not found, falling back to ad-hoc signing."
-        codesign --force --sign - "$app_dir"
+        print -u2 "Release requires a Developer ID identity; refusing ad-hoc fallback."
+        exit 1
     fi
 
-    if [[ -n "$IDENTITY" && -f "$api_key_file" && -n "$key_id" && -n "$issuer_id" ]]; then
+    [[ -f "$api_key_file" && -n "$key_id" && -n "$issuer_id" ]] || { print -u2 "Release requires Apple notarization credentials."; exit 1; }
+    if [[ -n "$IDENTITY" ]]; then
         echo "Notarizing app bundle with Apple notarization service..."
         NOTARIZE_ZIP="$build_dir/notarize.zip"
         rm -f "$NOTARIZE_ZIP"
@@ -157,5 +138,10 @@ otool -l "$app_dir/Contents/MacOS/BeanfunOTP" | grep -E -A3 'LC_VERSION_MIN_MACO
 lipo -info "$app_dir/Contents/MacOS/BeanfunOTP"
 echo "Code signature check:"
 codesign --verify --deep --strict --verbose "$app_dir"
-spctl --assess --type execute --verbose "$app_dir" || true
+if [[ "$do_release_sign" == true ]]; then
+    xcrun stapler validate "$app_dir"
+    spctl --assess --type execute --verbose "$app_dir"
+else
+    echo "Development build: ad-hoc signed; Apple notarization is not requested."
+fi
 

@@ -2,44 +2,44 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>zh_TW</string>
-    <key>CFBundleDisplayName</key>
-    <string>Beanfun OTP Legacy</string>
-    <key>CFBundleExecutable</key>
-    <string>BeanfunOTPLegacy</string>
-    <key>CFBundleIdentifier</key>
-    <string>local.ogom.beanfunotp.legacy</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>Beanfun OTP Legacy</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.8.2</string>
-    <key>CFBundleVersion</key>
-    <string>17</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>10.12</string>
-    <key>LSMultipleInstancesProhibited</key>
-    <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-    <key>CFBundleURLTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleURLName</key>
-            <string>NexonPlug</string>
-            <key>CFBundleURLSchemes</key>
-            <array>
-                <string>NexonPlug</string>
-            </array>
-        </dict>
-    </array>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh_TW</string>
+	<key>CFBundleDisplayName</key>
+	<string>Beanfun OTP Legacy</string>
+	<key>CFBundleExecutable</key>
+	<string>BeanfunOTPLegacy</string>
+	<key>CFBundleIdentifier</key>
+	<string>local.ogom.beanfunotp.legacy</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Beanfun OTP Legacy</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.9.0</string>
+	<key>CFBundleVersion</key>
+	<string>30</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.12</string>
+	<key>LSMultipleInstancesProhibited</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>NexonPlug</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>NexonPlug</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

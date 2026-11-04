@@ -2,6 +2,17 @@
 
 專為 macOS 設計的非官方 Beanfun 遊戲登入工具。透過 Gama Play 掃描 QR Code，即可安全取得 OTP 並自動啟動遊戲。零外部套件依賴（無需 Python、Node.js 或 Homebrew）。
 
+## 0.9.0 候選版改進
+
+- 重新整理一般模式的遊戲選擇、掃碼、帳號與更新介面，提供啟動前檢查及遮蔽後的診斷匯出。
+- 下載器固定為 nxdl `v0.1.2-prerelease9`、cmsdl `v0.2.9`，加入具備來源版本條件的差分更新與 TMS Minor Patch 路線。
+- 更新判斷不再依檔案總大小宣告最新；小更新、警告與未知結果分別處理。
+- 既有安裝在隔離副本更新並校驗後才切換，取消保留原安裝。V282→V283、經典版官方歷史差分及中斷恢復實測見 [D 驗證紀錄](docs/differential-update-validation.md)。
+- Modern／Legacy 同步 Issue #5 的保守 WebToken 選擇策略。
+- 新版下載工具需要 macOS 11 以上；Legacy 較舊系統的登入功能仍保留。
+
+正式版更新說明、最後程式碼／UI 檢查、差分更新限制與發布前驗收見 [0.9.0 發布與驗證紀錄](docs/release-0.9.0.md)。
+
 ## 核心特色
 
 - **零依賴與獨立運作**：純原生成品，解壓即用，不需安裝任何執行環境。
@@ -39,7 +50,7 @@
 ## 快速建置與測試
 
 ```sh
-cd BeanfunOTP
+cd CitrusGate
 
 ./test.sh          # 執行單元測試
 ./build.sh         # 建置 Modern 版 (dist/Beanfun OTP.app)
@@ -47,3 +58,18 @@ cd BeanfunOTP
 ```
 
 > **免責聲明**：本專案為非官方社群工具。遊戲服務與登入協定隨時可能變更。敏感登入憑證請勿公開分享。
+
+## 建置環境與正式發布
+
+建置使用 macOS Command Line Tools／Xcode 的 Swift 編譯器與 SDK。圖示由原生 AppKit 產生，不需要 NumPy、Pillow 或 iconutil。測試另外使用 Python 3 標準函式庫。
+
+共用腳本會避開要求缺失 SwiftUI State macro 的 SDK；可用 `SDKROOT` 明確指定 SDK、`SWIFTC` 指定編譯器。Legacy 10.12 需要包含 Intel 的 back-deployment 靜態程式庫。可先執行 `./scripts/fetch-legacy-compat.sh`，只在 `.build/` 下載與解出官方固定版本元件；需約 1.5 GB 下載量及解壓暫存空間。若目前工具鏈只提供 arm64，可用 `LEGACY_SWIFT_RUNTIME_DIR` 指向官方 Swift 6.1.2 套件解出的 `usr/lib/swift/macosx`，腳本會明確連入相容庫；動態 runtime 仍取用 macOS 10.9 起支援的 Swift 5.0 back-deployment 目錄。整個流程不替換系統工具。
+
+```sh
+./build.sh                 # 本機測試用 ad-hoc 簽章
+./build.sh --release       # Developer ID 簽署、Apple 公證、staple、Gatekeeper 驗證
+./scripts/verify-release.sh "dist/Beanfun OTP.app"
+./scripts/preview-ui.sh    # 使用合成資料產生原生畫面，無登入請求
+```
+
+正式建置需要本機 `auth/` 與 `.env` 已設定的發布憑證；缺少簽署或公證資料時會失敗，不會悄悄降級為 ad-hoc 成品。憑證與環境檔不得提交。

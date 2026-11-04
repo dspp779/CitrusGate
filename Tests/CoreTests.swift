@@ -51,6 +51,7 @@ enum CoreTests {
         try testGGMManifestJSONSerializationRoundTrip()
         try testGGMWebStartPathResolution()
         try testGGMDecryptLaunchData()
+        try ReleaseTests.run()
         print("CoreTests: 48 tests passed")
     }
 
@@ -737,12 +738,12 @@ enum CoreTests {
 
     private static func testCmsdlBinaryPin() throws {
         try expect(
-            GameClientToolConfig.cmsdlMapleStory.releaseTag == "v0.2.5",
+            GameClientToolConfig.cmsdlMapleStory.releaseTag == "v0.2.9",
             "cmsdl tag"
         )
         try expect(
             GameClientToolConfig.cmsdlMapleStory.sha256Hex
-                == "706efcf17608a807c884e1eb8e0c8b97084f67dfbec29f7664e9aba77d0a0b78",
+                == "9e39d11a4158e322762fef2e32740a064420eeb8c583edf4a1183fbde3c197ff",
             "cmsdl sha"
         )
         try expect(
@@ -911,7 +912,7 @@ enum CoreTests {
 
     private static func testClientUpdateUIHelpers() throws {
         try expect(
-            ClientUpdateUI.forceUpdateButtonTitle(gameID: GameDefinition.mapleStory.id) == "嘗試更新",
+            ClientUpdateUI.forceUpdateButtonTitle(gameID: GameDefinition.mapleStory.id) == "檢查並修復檔案",
             "maple force title"
         )
         try expect(
@@ -928,7 +929,7 @@ enum CoreTests {
         try expect(!ClientUpdateUI.showsForceUpdateButton(.updateAvailable), "available → no force")
         try expect(ClientUpdateUI.showsPrimaryUpdateButton(.updateAvailable), "available → update")
         try expect(!ClientUpdateUI.showsPrimaryUpdateButton(.upToDate), "upToDate → no primary update")
-        try expect(ClientUpdateUI.statusCaption(.upToDate) == "已是最新版本", "upToDate caption")
+        try expect(ClientUpdateUI.statusCaption(.upToDate) == "版本檢查完成", "upToDate caption")
         try expect(ClientUpdateUI.statusCaption(.updateAvailable) == "發現可用更新", "available caption")
         try expect(ClientUpdateUI.statusCaption(.checking) == nil, "checking has no caption")
         try expect(ClientUpdateUI.statusCaption(.none) == nil, "none has no caption")

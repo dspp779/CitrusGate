@@ -8,12 +8,7 @@ build_dir="$project_dir/.build-nxl-interceptor"
 app_dir="$project_dir/dist/NXL Interceptor.app"
 module_cache="$build_dir/module-cache"
 
-preferred_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
-if [[ -d "$preferred_sdk" ]]; then
-    sdk="$preferred_sdk"
-else
-    sdk="$(xcrun --sdk macosx --show-sdk-path)"
-fi
+source "$project_dir/scripts/build-environment.zsh"
 
 export TMPDIR="$build_dir/tmp"
 mkdir -p "$build_dir" "$module_cache" "$TMPDIR"
@@ -22,7 +17,7 @@ mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 sources=("$source_dir"/*.swift)
 
 echo "Building arm64 NXLInterceptor…"
-swiftc \
+"$swift_bin" \
     -swift-version 5 \
     -sdk "$sdk" \
     -module-cache-path "$module_cache" \

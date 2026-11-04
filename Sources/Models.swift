@@ -27,6 +27,7 @@ enum ClassicUpdateStatus: Equatable {
     case checking
     case upToDate
     case updateAvailable
+    case completed
     case maintenanceOrError(String)
 }
 
@@ -39,11 +40,11 @@ enum NexonPlugHandlerStatus {
 
 enum ClientUpdateUI {
     static func forceUpdateButtonTitle(gameID: String) -> String {
-        gameID == GameDefinition.mapleStoryClassic.id ? "完整下載" : "嘗試更新"
+        gameID == GameDefinition.mapleStoryClassic.id ? "完整下載" : "檢查並修復檔案"
     }
 
     static func showsCheckButton(_ status: ClassicUpdateStatus) -> Bool {
-        status == .none
+        status == .none || status == .completed
     }
 
     static func showsPrimaryUpdateButton(_ status: ClassicUpdateStatus) -> Bool {
@@ -52,14 +53,15 @@ enum ClientUpdateUI {
 
     static func showsForceUpdateButton(_ status: ClassicUpdateStatus) -> Bool {
         switch status {
-        case .upToDate, .maintenanceOrError: return true
+        case .upToDate, .completed, .maintenanceOrError: return true
         default: return false
         }
     }
 
     static func statusCaption(_ status: ClassicUpdateStatus) -> String? {
         switch status {
-        case .upToDate: return "已是最新版本"
+        case .upToDate: return "版本檢查完成"
+        case .completed: return "本次更新已完成"
         case .updateAvailable: return "發現可用更新"
         case let .maintenanceOrError(message): return message
         case .none, .checking: return nil
@@ -151,7 +153,7 @@ struct GameDefinition: Identifiable, Hashable {
         name: "新楓之谷",
         serviceCode: "610074",
         serviceRegion: "T9",
-        imageName: "maplestory.jpg",
+        imageName: "maplestory-logo.png",
         executableName: "MapleStory.exe",
         launchStyle: .mapleStory,
         accountFlow: .gameZone,
@@ -189,7 +191,7 @@ struct GameDefinition: Identifiable, Hashable {
             name: "艾爾之光",
             serviceCode: "300148",
             serviceRegion: "AF",
-            imageName: "elsword.jpg",
+            imageName: "elsword-logo.png",
             executableName: "elsword.exe",
             launchStyle: .elsword,
             accountFlow: .gameZone,

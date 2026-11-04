@@ -95,7 +95,7 @@ struct BeanfunOTPApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 400, height: 360)
+        .defaultSize(width: 480, height: 660)
         .windowResizability(.contentSize)
         .commandsRemoved()
         .commands {
@@ -124,12 +124,14 @@ struct BeanfunOTPApp: App {
                             Text(mode.title)
                         }
                     }
+                    .disabled(model.isBusy)
                 }
             }
             CommandMenu("主程式") {
                 Button("選擇主程式") {
                     model.chooseExecutable()
                 }
+                .disabled(model.isBusy)
                 Button("下載主程式") {
                     if model.selectedGame?.id == GameDefinition.mapleStoryClassic.id {
                         model.downloadClassicClient()
@@ -137,6 +139,7 @@ struct BeanfunOTPApp: App {
                         model.downloadMapleStoryClient()
                     }
                 }
+                .disabled(model.isBusy)
                 Button("更新主程式") {
                     if model.selectedGame?.id == GameDefinition.mapleStoryClassic.id {
                         model.updateClassicClient()
@@ -144,6 +147,7 @@ struct BeanfunOTPApp: App {
                         model.updateMapleStoryClient()
                     }
                 }
+                .disabled(model.isBusy)
             }
         }
     }

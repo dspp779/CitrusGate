@@ -1,5 +1,8 @@
 import AppKit
 import Combine
+#if UI_PREVIEW
+import CoreImage
+#endif
 import CoreServices
 import Foundation
 import UniformTypeIdentifiers
@@ -66,7 +69,7 @@ final class AppModel: ObservableObject {
     @Published var otpSecondsRemaining = 0
     @Published var autoRefresh = false
     @Published var autoRefreshInterval = 60
-    @Published var includeSecrets = true
+    @Published var includeSecrets = false
     @Published var isBusy = false
     @Published var statusMessage = "準備登入"
     @Published var errorMessage: String?
@@ -92,11 +95,17 @@ final class AppModel: ObservableObject {
     }
     @Published private(set) var isDownloadingGameClient = false
     @Published private(set) var classicDownloadStatus = ""
+    @Published private(set) var isCancellingClientDownload = false
     @Published private(set) var classicDownloadProgress = NxdlDownloadProgressState()
     @Published private(set) var gameClientDownloadTitle = ""
     @Published var showClassicDownloadProgress = false
     @Published private(set) var classicUpdateStatus: ClassicUpdateStatus = .none
     @Published private(set) var isNexonPlugHandler = false
+
+    @Published private(set) var clientUpdateDetail = ""
+    @Published private(set) var readinessItems: [LaunchReadinessItem] = []
+    private var updateCheckID = UUID()
+    private var downloadID = UUID()
 
     private let defaults: UserDefaults
     private let ggmManifestStore = GGMManifestStore()
@@ -122,7 +131,7 @@ final class AppModel: ObservableObject {
     private var pendingLaunchKind: PendingLaunchKind = .defaultOpen
     private lazy var client = BeanfunClient(
         log: { [weak self] message in
-            self?.appendLog(message)
+            Task { @MainActor in self?.appendLog(message) }
         },
         ggmLaunch: { [weak self] ticket in
             self?.ggmTicketState = .consumed(ticket)
@@ -132,7 +141,7 @@ final class AppModel: ObservableObject {
         }
     )
     private lazy var nxdlDownloader = NxdlDownloader { [weak self] message in
-        self?.appendLog(message)
+        Task { @MainActor in self?.appendLog(message) }
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -170,6 +179,47 @@ final class AppModel: ObservableObject {
             )
         }
     }
+
+    #if UI_PREVIEW
+    func configurePreview(_ state: String) {
+        didStartManifestRefresh = true
+        if state == "games" { return }
+        selectGame(state == "classic" ? .mapleStoryClassic : .mapleStory, autoPickExecutable: false)
+        statusMessage = "準備登入"
+        if state == "qr" || state == "expired" {
+            screen = .qr
+            let filter = CIFilter(name: "CIQRCodeGenerator")!
+            filter.setValue(Data("https://example.invalid/preview".utf8), forKey: "inputMessage")
+            let image = filter.outputImage!.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+            qrImage = NSImage(cgImage: CIContext().createCGImage(image, from: image.extent)!, size: NSSize(width: 264, height: 264))
+            qrSecondsRemaining = state == "expired" ? 0 : 42
+            statusMessage = state == "expired" ? "QR Code 已到期，請重新產生。" : "等待手機確認登入"
+        } else if state == "accounts" {
+            screen = .accounts
+            accounts = [GameAccount(id: "preview-a", sn: "fixture-a", displayName: "我的冒險帳號"),
+                        GameAccount(id: "preview-b", sn: "fixture-b", displayName: "很長的帳號名稱，用來檢查文字換行與按鈕是否完整顯示")]
+            selectedAccountID = accounts.first?.id
+            statusMessage = "登入完成，請選擇帳號。"
+        } else if state == "update" || state == "minor" {
+            gameClientDownloadTitle = "更新新楓之谷"
+            classicDownloadProgress.phase = state == "minor" ? .minorPatch : .downloading
+            classicDownloadProgress.overall = NxdlProgressBarInfo(downloadedText: "74.50 MiB", totalText: "176.88 MiB", speedText: "12.30 MiB/s", etaText: "ETA 8s", elapsedText: "00:00:06", fraction: 0.42)
+            classicDownloadProgress.currentFileNames = [state == "minor" ? "ExePatch.dat" : "非常長的遊戲資源檔案名稱_Character_00001.wz"]
+        } else if state == "verifying" || state == "cancelling" {
+            gameClientDownloadTitle = "更新新楓之谷"
+            classicDownloadProgress.phase = .finishing
+            isCancellingClientDownload = state == "cancelling"
+        } else if state == "advanced" {
+            mode = .advanced
+        } else if state == "update-error" {
+            classicUpdateStatus = .maintenanceOrError("更新尚未完成")
+            clientUpdateDetail = "無法連線至更新伺服器，請稍後再試。已保留既有遊戲檔案。"
+        } else if state == "readiness" {
+            readinessItems = [LaunchReadinessItem(title: "遊戲主程式", detail: "請選擇 MapleStory.exe。", isReady: false),
+                              LaunchReadinessItem(title: "啟動環境", detail: "請安裝 Cyder，或設定 .exe 的預設開啟程式。", isReady: false)]
+        }
+    }
+    #endif
 
     var games: [GameDefinition] { GameDefinition.all }
 
@@ -215,7 +265,7 @@ final class AppModel: ObservableObject {
     }
 
     func setMode(_ newMode: AppMode) {
-        guard mode != newMode else { return }
+        guard mode != newMode, !isBusy else { return }
         mode = newMode
         statusMessage = "已切換至\(newMode.title)"
         if newMode == .standard {
@@ -241,6 +291,8 @@ final class AppModel: ObservableObject {
         classicUpdateStatus = .none
         selectedGameID = game.id
         executablePath = defaults.string(forKey: executablePathKey(for: game)) ?? ""
+        clientUpdateDetail = ""
+        refreshLaunchReadiness()
         resetGameSession()
         if game.authFlow == .webNexonPlug {
             screen = .classic
@@ -304,7 +356,7 @@ final class AppModel: ObservableObject {
         logText = ""
         isBusy = true
         statusMessage = "正在建立 Beanfun 登入階段…"
-        client.includeSecrets = includeSecrets
+        client.includeSecrets = false
 
         loginTask = Task { [weak self] in
             guard let self else { return }
@@ -389,7 +441,7 @@ final class AppModel: ObservableObject {
         otpTask?.cancel()
         otpCountdownTask?.cancel()
         ggmTicketState = .none
-        client.includeSecrets = includeSecrets
+        client.includeSecrets = false
         isBusy = true
         statusMessage = "正在取得 \(account.displayName) 的 OTP…"
         otpTask = Task { [weak self] in
@@ -499,11 +551,12 @@ final class AppModel: ObservableObject {
     }
 
     func copyDebugLog() {
-        copy(logText)
+        copy(DiagnosticRedactor.redact(logText))
         statusMessage = "Debug log 已複製"
     }
 
     func chooseExecutable() {
+        guard !isDownloadingGameClient else { return }
         guard let game = selectedGame else {
             errorMessage = "請先選擇遊戲"
             screen = .games
@@ -519,7 +572,12 @@ final class AppModel: ObservableObject {
         panel.allowedContentTypes = [UTType(filenameExtension: "exe") ?? .data]
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        classicUpdateCheckTask?.cancel()
+        updateCheckID = UUID()
+        classicUpdateStatus = .none
+        clientUpdateDetail = ""
         executablePath = url.path
+        refreshLaunchReadiness()
         classicUpdateCheckTask?.cancel()
         classicUpdateStatus = .none
         statusMessage = "已記住\(game.name)主程式位置"
@@ -565,16 +623,26 @@ final class AppModel: ObservableObject {
     }
 
     func launchSelectedAccountViaOpen() {
+        guard preflight(launcher: .defaultApplication) else { return }
         pendingLaunchKind = .defaultOpen
         launchSelectedAccount()
     }
 
-    func launchSelectedAccountViaCyder() {
-        if selectedGame?.id == GameDefinition.mapleStory.id,
-           !CyderInstallation.isOfficialCyderInstalled() {
-            errorMessage = "請先安裝 Cyder 正式版。"
-            return
+    private func preflight(launcher: OpenLauncher) -> Bool {
+        guard let game = selectedGame else { return false }
+        if let issue = LaunchPreflight.fileProblem(path: normalizedExecutablePath, expectedName: game.executableName) {
+            errorMessage = issue; return false
         }
+        guard LaunchPreflight.application(for: launcher, executable: normalizedExecutablePath) != nil else {
+            errorMessage = "找不到此遊戲的啟動環境，請先完成啟動前檢查。"; return false
+        }
+        return true
+    }
+
+    func launchSelectedAccountViaCyder() {
+        // This route uses native OTP and the official Cyder bundle below;
+        // the OEM launcher remains a separate advanced-mode option.
+        guard selectedGame != nil, preflight(launcher: .cyder) else { return }
         pendingLaunchKind = .cyderApp
         launchSelectedAccount()
     }
@@ -638,7 +706,7 @@ final class AppModel: ObservableObject {
         otpCountdownTask?.cancel()
         ggmTicketState = .none
         otp = nil
-        client.includeSecrets = includeSecrets
+        client.includeSecrets = false
         isBusy = true
         statusMessage = "正在準備 \(account.displayName) 的 gamaniagames://…"
         otpTask = Task { [weak self] in
@@ -673,6 +741,13 @@ final class AppModel: ObservableObject {
             return
         }
         guard let (path, account, otp) = validatedLaunchTarget(for: game) else { return }
+
+        guard LaunchPreflight.application(for: launcher, executable: path) != nil else {
+            errorMessage = launcher == .defaultApplication
+                ? "找不到可開啟 .exe 的程式。請安裝 Cyder，或在 Finder 設定預設開啟程式。"
+                : "找不到此遊戲需要的 Cyder 版本，請先完成安裝。"
+            return
+        }
 
         do {
             try clearQuarantineIfNeeded(at: path)
@@ -907,20 +982,8 @@ final class AppModel: ObservableObject {
         for game: GameDefinition
     ) -> (path: String, account: GameAccount, otp: OTPResult)? {
         let path = normalizedExecutablePath
-        guard !path.isEmpty else {
-            errorMessage = "請先選擇 \(game.executableName)"
-            return nil
-        }
-
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
-              !isDirectory.boolValue else {
-            errorMessage = "找不到\(game.name)主程式：\(path)"
-            return nil
-        }
-        guard URL(fileURLWithPath: path).pathExtension.lowercased() == "exe" else {
-            errorMessage = "請選擇副檔名為 .exe 的檔案"
-            return nil
+        if let problem = LaunchPreflight.fileProblem(path: path, expectedName: game.executableName) {
+            errorMessage = problem; return nil
         }
         guard let account = selectedAccount, let otp else {
             errorMessage = "請先選擇帳號並取得 OTP"
@@ -1076,59 +1139,22 @@ final class AppModel: ObservableObject {
         guard !isDownloadingGameClient else { return }
 
         classicUpdateCheckTask?.cancel()
+        let id = UUID(); updateCheckID = id
         classicUpdateStatus = .checking
-
+        clientUpdateDetail = "正在比較本機版本與伺服器更新路線…"
         let config: GameClientToolConfig = isClassic ? .nxdlClassic : .cmsdlMapleStory
         let destination = URL(fileURLWithPath: path).deletingLastPathComponent()
-
         classicUpdateCheckTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let manifestInfo = try await self.nxdlDownloader.probeManifestInfo(config: config) { _ in }
-                guard !Task.isCancelled else {
-                    self.classicUpdateStatus = .none
-                    return
-                }
-                let totalManifestBytes = manifestInfo.totalBytes > 0
-                    ? manifestInfo.totalBytes
-                    : (try await self.nxdlDownloader.probeTotalSize(config: config) { _ in })
-                guard !Task.isCancelled else {
-                    self.classicUpdateStatus = .none
-                    return
-                }
-                // Walks every manifest file on disk; can be slow for large
-                // installs, so run it off the main actor to avoid freezing the UI.
-                let filePaths = manifestInfo.filePaths
-                let bytesNeeded = await Task.detached(priority: .userInitiated) {
-                    IncrementalSizeCalculator.calculateRequiredDownloadBytes(
-                        manifestFiles: filePaths,
-                        totalManifestBytes: totalManifestBytes,
-                        destination: destination
-                    )
-                }.value
-                guard !Task.isCancelled else {
-                    self.classicUpdateStatus = .none
-                    return
-                }
-                self.classicUpdateStatus = bytesNeeded == 0 ? .upToDate : .updateAvailable
+                let plan = try await self.nxdlDownloader.inspectClient(config: config, destination: destination)
+                guard !Task.isCancelled, self.updateCheckID == id else { return }
+                self.clientUpdateDetail = plan.detail
+                self.classicUpdateStatus = plan.isCurrent ? .upToDate : .updateAvailable
             } catch {
-                guard !Task.isCancelled else {
-                    self.classicUpdateStatus = .none
-                    return
-                }
-                let errorMsg = error.localizedDescription
-                let message: String
-                if errorMsg.contains("failed to parse game-info response")
-                    || errorMsg.contains("failed to lookup address information")
-                    || errorMsg.contains("Dns Failed")
-                    || errorMsg.contains("HTTP request failed")
-                    || errorMsg.contains("ConnectFailed")
-                    || errorMsg.contains("timed out") {
-                    message = "無法檢查更新（可能是伺服器維修中）"
-                } else {
-                    message = "無法檢查更新：\(errorMsg)"
-                }
-                self.classicUpdateStatus = .maintenanceOrError(message)
+                guard !Task.isCancelled, self.updateCheckID == id else { return }
+                self.classicUpdateStatus = .maintenanceOrError("無法確認更新，請重試。")
+                self.clientUpdateDetail = DiagnosticRedactor.redact(error.localizedDescription)
             }
         }
     }
@@ -1221,6 +1247,8 @@ final class AppModel: ObservableObject {
     }
 
     func cancelClassicDownload() {
+        guard isDownloadingGameClient, !isCancellingClientDownload else { return }
+        isCancellingClientDownload = true
         nxdlDownloader.cancel()
         classicDownloadTask?.cancel()
     }
@@ -1253,165 +1281,147 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func presentUpToDateAlert(forceButtonTitle: String) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "已是最新版本"
-        alert.informativeText = "經快速檢查，本機檔案完整且檔案大小一致。\n目前不需要下載額外檔案。"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "確定")
-        alert.addButton(withTitle: forceButtonTitle)
-        return alert.runModal() == .alertSecondButtonReturn
-    }
-
     private func startGameClientDownload(
-        targetGame: GameDefinition,
-        config: GameClientToolConfig,
-        destination: URL,
-        progressTitle: String,
-        statusWhileDownloading: String,
-        missingExecutableHint: String,
-        logLabel: String,
-        isDeepUpdate: Bool = false
+        targetGame: GameDefinition, config: GameClientToolConfig, destination: URL,
+        progressTitle: String, statusWhileDownloading: String,
+        missingExecutableHint: String, logLabel: String, isDeepUpdate: Bool = false
     ) {
         classicUpdateCheckTask?.cancel()
+        updateCheckID = UUID()
+        let id = UUID(); downloadID = id
         classicUpdateStatus = .none
-        classicDownloadTask?.cancel()
         classicDownloadTask = Task { [weak self] in
             guard let self else { return }
             self.gameClientDownloadTitle = progressTitle
             self.isDownloadingGameClient = true
+            self.isCancellingClientDownload = false
             self.isBusy = true
-            if isDeepUpdate {
-                self.statusMessage = targetGame.id == GameDefinition.mapleStoryClassic.id
-                    ? "正在準備完整下載…"
-                    : "正在準備更新…"
-            } else {
-                self.statusMessage = "正在檢查下載大小…"
+            self.showClassicDownloadProgress = true
+            self.classicDownloadProgress = NxdlDownloadProgressState(statusMessage: "正在確認更新路線…")
+            self.classicDownloadStatus = "正在確認更新路線…"
+            defer {
+                if self.downloadID == id {
+                    self.isDownloadingGameClient = false
+                    self.isCancellingClientDownload = false
+                    self.isBusy = false
+                    self.showClassicDownloadProgress = false
+                }
             }
-            self.classicDownloadStatus = self.statusMessage
-            self.classicDownloadProgress = NxdlDownloadProgressState(statusMessage: self.statusMessage)
-            // Progress sheet opens only after the disk gate passes.
-
+            let update: @Sendable (NxdlDownloadUpdate) -> Void = { [weak self] value in
+                Task { @MainActor in
+                    guard let self, self.downloadID == id, self.isDownloadingGameClient else { return }
+                    switch value {
+                    case let .message(message):
+                        self.classicDownloadStatus = message
+                        self.classicDownloadProgress.notePhase(message)
+                    case var .progress(progress):
+                        progress.notePhase(progress.statusMessage)
+                        self.classicDownloadProgress = progress
+                        if !progress.statusMessage.isEmpty { self.classicDownloadStatus = progress.statusMessage }
+                    }
+                }
+            }
             do {
-                let manifestInfo = try await self.nxdlDownloader.probeManifestInfo(config: config) { update in
-                    Task { @MainActor in
-                        if case let .message(message) = update {
-                            self.statusMessage = message
-                            self.classicDownloadStatus = message
-                        }
-                    }
-                }
-                let total = manifestInfo.totalBytes > 0
-                    ? manifestInfo.totalBytes
-                    : (try await self.nxdlDownloader.probeTotalSize(config: config) { _ in })
+                let problem = LaunchPreflight.destinationProblem(destination)
+                if let problem { throw BeanfunError.rejected(problem) }
+                let installed = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination) != nil
+                let plan = !isDeepUpdate && installed
+                    ? try await self.nxdlDownloader.inspectClient(config: config, destination: destination)
+                    : ClientUpdatePlan.fullDownload("下載並驗證客戶端檔案。")
+                try Task.checkCancellation()
+                self.clientUpdateDetail = plan.detail
+                // Reserve a private replacement tree, application scratch files,
+                // and patch downloads even on volumes without file cloning.
+                // --purge-wz-files never guaranteed a 5 GiB upper bound.
+                let total = try await self.nxdlDownloader.probeTotalSize(config: config, onUpdate: update)
+                try Task.checkCancellation()
+                try ClientUpdateTransaction.reclaimAbandoned(destination: destination)
+                let reserve = plan.operation == .patch
+                    ? DiskSpaceGate.updateReserve(total: total, patch: plan.downloadBytes ?? total)
+                    : FileManager.default.fileExists(atPath: destination.path) ? DiskSpaceGate.updateReserve(total: total, patch: 0) : total
                 let free = try VolumeFreeSpace.freeBytes(forDirectory: destination)
-
-                var bytesToCheck = total
-                if !isDeepUpdate {
-                    // Walks every manifest file on disk; run off the main actor
-                    // to avoid freezing the UI for large installs.
-                    let filePaths = manifestInfo.filePaths
-                    bytesToCheck = await Task.detached(priority: .userInitiated) {
-                        IncrementalSizeCalculator.calculateRequiredDownloadBytes(
-                            manifestFiles: filePaths,
-                            totalManifestBytes: total,
-                            destination: destination
-                        )
-                    }.value
+                guard self.presentDiskGate(evaluation: DiskSpaceGate.evaluate(totalBytes: reserve, freeBytes: free)) else {
+                    self.statusMessage = "已取消，既有遊戲檔案已保留。"; return
                 }
-
-                if !isDeepUpdate && bytesToCheck == 0 {
-                    self.statusMessage = "本機檔案完整且大小一致，已是最新版本"
-                    self.isDownloadingGameClient = false
-                    self.isBusy = false
-                    self.classicDownloadStatus = ""
-                    self.classicDownloadProgress = NxdlDownloadProgressState()
-                    self.gameClientDownloadTitle = ""
-                    self.classicUpdateStatus = .upToDate
-                    let forceTitle = ClientUpdateUI.forceUpdateButtonTitle(gameID: targetGame.id)
-                    if self.presentUpToDateAlert(forceButtonTitle: forceTitle) {
-                        self.startGameClientDownload(
-                            targetGame: targetGame,
-                            config: config,
-                            destination: destination,
-                            progressTitle: progressTitle,
-                            statusWhileDownloading: statusWhileDownloading,
-                            missingExecutableHint: missingExecutableHint,
-                            logLabel: logLabel,
-                            isDeepUpdate: true
-                        )
-                    }
-                    return
-                }
-
-                // Deep update re-downloads everything, so the gate must cover the
-                // full size — except cmsdlMapleStory, which purges WZ files as it
-                // goes and never holds more than ~5 GiB on disk at once.
-                let diskGateTotal: UInt64
-                if isDeepUpdate {
-                    diskGateTotal = config == .cmsdlMapleStory ? min(total, 5 * DiskSpaceGate.gibibyte) : total
-                } else {
-                    diskGateTotal = bytesToCheck
-                }
-                let evaluation = DiskSpaceGate.evaluate(totalBytes: diskGateTotal, freeBytes: free)
-                guard self.presentDiskGate(evaluation: evaluation) else {
-                    self.statusMessage = "已取消下載"
-                    self.isDownloadingGameClient = false
-                    self.isBusy = false
-                    self.classicDownloadStatus = ""
-                    self.classicDownloadProgress = NxdlDownloadProgressState()
-                    self.gameClientDownloadTitle = ""
-                    return
-                }
-
-                self.classicDownloadStatus = "準備下載…"
-                self.classicDownloadProgress = NxdlDownloadProgressState(statusMessage: "準備下載…")
-                self.showClassicDownloadProgress = true
+                try Task.checkCancellation()
                 self.statusMessage = statusWhileDownloading
-
-                try await self.nxdlDownloader.downloadClient(config: config, to: destination) { update in
-                    Task { @MainActor in
-                        switch update {
-                        case let .message(message):
-                            self.classicDownloadStatus = message
-                        case let .progress(progress):
-                            self.classicDownloadProgress = progress
-                            if !progress.statusMessage.isEmpty {
-                                self.classicDownloadStatus = progress.statusMessage
-                            }
-                        }
-                    }
+                try await self.nxdlDownloader.downloadClient(config: config, to: destination,
+                    operation: plan.operation, onUpdate: update)
+                // Success means the directory exchange already committed. A late
+                // cancellation must not misreport that installed update as cancelled.
+                guard let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination) else {
+                    throw BeanfunError.rejected(missingExecutableHint)
                 }
-
-                self.classicUpdateStatus = .upToDate
-
-                if let exePath = self.nxdlDownloader.findPrimaryExecutable(config: config, in: destination) {
-                    self.saveExecutablePath(exePath, for: targetGame)
-                    self.statusMessage = "下載完成，已設定主程式路徑"
-                    self.appendLog("\(logLabel)下載完成：\(destination.path)，主程式=\(exePath)")
-                } else {
-                    self.statusMessage = missingExecutableHint
-                    self.appendLog("\(logLabel)下載完成：\(destination.path)（未自動找到主程式）")
-                }
+                self.saveExecutablePath(exePath, for: targetGame)
+                self.classicUpdateStatus = .completed
+                self.clientUpdateDetail = self.nxdlDownloader.completionNote
+                self.statusMessage = self.nxdlDownloader.completionNote
+                self.appendLog("\(logLabel)更新完成，已設定主程式路徑。")
+                self.refreshLaunchReadiness()
             } catch is CancellationError {
-                self.statusMessage = "下載已取消"
+                self.statusMessage = "已取消，既有遊戲檔案已保留；重試可能重新下載。"
             } catch let error as NxdlDownloaderError {
-                if case .cancelled = error {
-                    self.statusMessage = "下載已取消"
-                } else {
+                if case .cancelled = error { self.statusMessage = "已取消，既有遊戲檔案已保留；重試可能重新下載。" }
+                else {
+                    self.classicUpdateStatus = .maintenanceOrError("更新尚未完成")
+                    self.clientUpdateDetail = DiagnosticRedactor.redact(error.localizedDescription)
                     self.present(error)
                 }
             } catch {
+                self.classicUpdateStatus = .maintenanceOrError("更新尚未完成")
+                self.clientUpdateDetail = DiagnosticRedactor.redact(error.localizedDescription)
                 self.present(error)
             }
-
-            self.isDownloadingGameClient = false
-            self.isBusy = false
-            self.classicDownloadStatus = ""
-            self.classicDownloadProgress = NxdlDownloadProgressState()
-            self.gameClientDownloadTitle = ""
-            self.showClassicDownloadProgress = false
         }
+    }
+
+    func repairLegacyDownloadPaths() {
+        guard !isBusy, hasValidExecutable else { return }
+        let destination = URL(fileURLWithPath: normalizedExecutablePath).deletingLastPathComponent()
+        isBusy = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.isBusy = false }
+            do {
+                let count = try await Task.detached {
+                    try NxdlDownloader().normalizeWindowsPathFilenames(in: destination)
+                }.value
+                self.statusMessage = count == 0 ? "未發現需要修復的舊版路徑。" : "已修復 \(count) 個舊版檔案路徑。"
+            } catch { self.present(error) }
+        }
+    }
+
+    func refreshLaunchReadiness() {
+        guard let game = selectedGame else { readinessItems = []; return }
+        let issue = LaunchPreflight.fileProblem(path: normalizedExecutablePath, expectedName: game.executableName)
+        let defaultApp = hasValidExecutable ? LaunchPreflight.application(for: .defaultApplication, executable: normalizedExecutablePath) : nil
+        let cyder = NSWorkspace.shared.urlForApplication(withBundleIdentifier: OpenLauncher.cyderBundleIdentifier)
+        readinessItems = [
+            LaunchReadinessItem(title: "遊戲主程式", detail: issue ?? "檔案可讀取", isReady: issue == nil),
+            LaunchReadinessItem(title: "系統預設開啟程式", detail: defaultApp != nil ? "已設定 .exe 的開啟程式" : "尚未設定預設程式，可改用 Cyder 啟動。", isReady: defaultApp != nil),
+            LaunchReadinessItem(title: "Cyder", detail: cyder != nil ? "已找到此遊戲的 Cyder 版本" : "未找到此遊戲的 Cyder 版本，請依安裝說明設定。", isReady: cyder != nil)
+        ]
+        if game.id == GameDefinition.mapleStory.id {
+            let oemReady = NSWorkspace.shared.urlForApplication(withBundleIdentifier: OpenLauncher.cyderMapleStoryOEMBundleIdentifier) != nil
+            readinessItems.append(LaunchReadinessItem(title: "Cyder 新楓之谷分支（選用）", detail: oemReady ? "可供進階模式使用" : "未安裝不影響 Cyder 正式版的啟動方式。", isReady: oemReady))
+            let wineReady = FileManager.default.isExecutableFile(atPath: MapleStoryWineLauncher.wineExecutableURL().path)
+            readinessItems.append(LaunchReadinessItem(title: "MapleStory Launcher Wine", detail: wineReady ? "已找到 Wine 啟動環境" : "如需使用 Wine，請先安裝 MapleStory Launcher。", isReady: wineReady))
+        }
+        if game.id == GameDefinition.mapleStoryClassic.id {
+            refreshNexonPlugHandlerStatus()
+            readinessItems.append(LaunchReadinessItem(title: "網頁登入連結", detail: isNexonPlugHandler ? "已交由 Beanfun OTP 處理" : "請設定由 Beanfun OTP 接收登入連結。", isReady: isNexonPlugHandler))
+        }
+    }
+
+    func exportDiagnostics() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "Beanfun-OTP-diagnostics.txt"
+        panel.allowedContentTypes = [.plainText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
+        let report = "Beanfun OTP \(version)\nmacOS \(ProcessInfo.processInfo.operatingSystemVersionString)\nnxdl \(NxdlDownloader.releaseTag) / cmsdl \(GameClientToolConfig.cmsdlMapleStory.releaseTag)\n\n" + DiagnosticRedactor.redact(logText)
+        do { try report.write(to: url, atomically: true, encoding: .utf8); statusMessage = "診斷紀錄已匯出，登入連結與憑證已遮蔽。" }
+        catch { present(error) }
     }
 
     func handleOpenedURL(_ url: URL, fromColdStart: Bool = false) {
@@ -1440,6 +1450,10 @@ final class AppModel: ObservableObject {
     }
 
     private func handleClassicNexonPlug(_ parsed: NexonPlugURLParser.Parsed) {
+        guard !isDownloadingGameClient else {
+            statusMessage = "更新期間暫不啟動遊戲；完成後請重新由官網登入。"
+            return
+        }
         guard !parsed.passargTokens.isEmpty else {
             // selectGame() → resetGameSession() clears errorMessage, so it must
             // run first; setting errorMessage afterwards keeps it visible.
@@ -1473,6 +1487,9 @@ final class AppModel: ObservableObject {
 
     private func launchClassic(passargTokens: [String]) {
         let path = normalizedExecutablePath
+        if let issue = LaunchPreflight.fileProblem(path: path, expectedName: GameDefinition.mapleStoryClassic.executableName) {
+            errorMessage = issue; return
+        }
         guard isValidExecutablePath(path) else {
             errorMessage = "請先選擇 Maplestory_Classic.exe"
             return
@@ -1729,7 +1746,7 @@ final class AppModel: ObservableObject {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm:ss.SSS"
-        let line = "[\(formatter.string(from: Date()))] \(message)"
+        let line = "[\(formatter.string(from: Date()))] \(DiagnosticRedactor.redact(message))"
         if logText.isEmpty {
             logText = line
         } else {

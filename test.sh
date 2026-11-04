@@ -30,3 +30,23 @@ swiftc -swift-version 5 -sdk "$sdk" -module-cache-path "$module_cache" \
     "$project_dir/Tests/CoreTests.swift" \
     -o "$build_dir/CoreTests"
 "$build_dir/CoreTests"
+
+# Compile and run identical offline WebToken fixtures against both implementations.
+for implementation in Modern Legacy; do
+    if [[ "$implementation" == Modern ]]; then
+        client_sources="$project_dir/Sources"
+    else
+        client_sources="$project_dir/Legacy/Sources"
+    fi
+    swiftc -swift-version 5 -sdk "$sdk" -module-cache-path "$module_cache" \
+        -target arm64-apple-macosx13.0 -parse-as-library \
+        "$client_sources/Models.swift" \
+        "$client_sources/DESCipher.swift" \
+        "$client_sources/MapleStoryWineLauncher.swift" \
+        "$client_sources/BeanfunClient.swift" \
+        "$project_dir/Sources/GGMManifest.swift" \
+        "$project_dir/Sources/GGMDataParam.swift" \
+        "$project_dir/Tests/WebTokenTests.swift" \
+        -o "$build_dir/WebTokenTests-$implementation"
+    "$build_dir/WebTokenTests-$implementation" "$project_dir/Tests/Fixtures/web-token" "$implementation"
+done
